@@ -248,8 +248,6 @@ export function ValorizacionTable({
           { garmentTypeId, quantity: newQty },
         ]
       }
-      // Remove items with 0 quantity
-      newItems = newItems.filter((i) => i.quantity > 0)
       onUpdateEntry(
         entry.id,
         (entry as Acta | Guia).number || "",

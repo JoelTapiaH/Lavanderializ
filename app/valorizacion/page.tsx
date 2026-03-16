@@ -13,12 +13,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Plus, Trash2, Pencil, FileDown, Loader2 } from "lucide-react"
+import { Plus, Trash2, Pencil, FileDown, Loader2, FileSpreadsheet } from "lucide-react"
 import { toast } from "sonner"
-import type { ValorizacionItem } from "@/lib/types"
 import { ValorizacionTable } from "@/components/valorizacion-table"
 import { ValorizacionPeriodDialog } from "@/components/valorizacion-period-dialog"
 import { generateValorizacionPdf } from "@/lib/generate-pdf"
+import { generateValorizacionExcel } from "@/lib/generate-excel"
 
 export default function ValorizacionPage() {
   const {
@@ -75,6 +75,21 @@ export default function ValorizacionPage() {
       toast.error("Error al generar el PDF")
     } finally {
       setIsExporting(false)
+    }
+  }
+
+  function handleExportExcel() {
+    if (!selectedPeriod) return
+    try {
+      generateValorizacionExcel({
+        period: selectedPeriod,
+        garmentTypes: data.garmentTypes,
+        garmentTypeIds: allGarmentTypeIds,
+      })
+      toast.success("Excel generado exitosamente")
+    } catch (err) {
+      console.error(err)
+      toast.error("Error al generar el Excel")
     }
   }
 
@@ -167,6 +182,15 @@ export default function ValorizacionPage() {
                   Exportar PDF
                 </Button>
                 <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleExportExcel}
+                  disabled={allGarmentTypeIds.length === 0}
+                >
+                  <FileSpreadsheet className="mr-1 h-3.5 w-3.5" />
+                  Exportar Excel
+                </Button>
+                <Button
                   variant="outline"
                   size="sm"
                   onClick={handleEditPeriod}
@@ -253,118 +277,124 @@ export default function ValorizacionPage() {
               />
             </div>
 
-            {/* Pricing summary */}
-            {allGarmentTypeIds.length > 0 && (
-              <div className="flex flex-col gap-2">
-                <h3 className="text-sm font-semibold text-foreground uppercase">
-                  {"Valorizacion - "}
-                  {selectedPeriod.name}
-                </h3>
-                <div className="overflow-x-auto rounded-lg" style={{ border: "2px solid #00b0f0" }}>
-                    <table className="w-full max-w-lg border-collapse text-sm">
-                      <thead>
-                        <tr style={{ background: "#00b0f0" }}>
-                          <th className="border px-4 py-2 text-left text-xs font-bold uppercase" style={{ color: "#000000", borderColor: "#0090c8" }}>
-                            Detalle
-                          </th>
-                          <th className="border px-4 py-2 text-right text-xs font-bold uppercase" style={{ color: "#000000", borderColor: "#0090c8" }}>
-                            Cantidad
-                          </th>
-                          <th className="border px-4 py-2 text-right text-xs font-bold uppercase" style={{ color: "#000000", borderColor: "#0090c8" }}>
-                            P.U
-                          </th>
-                          <th className="border px-4 py-2 text-right text-xs font-bold uppercase" style={{ color: "#000000", borderColor: "#0090c8" }}>
-                            Importe
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(() => {
-                          let subtotal = 0
-                          const rows = allGarmentTypeIds.map((gtId, idx) => {
-                            const gt = data.garmentTypes.find(
-                              (g) => g.id === gtId
-                            )
-                            const qty = selectedPeriod.actas.reduce(
-                              (sum, a) =>
-                                sum +
-                                (a.items.find(
-                                  (i) => i.garmentTypeId === gtId
-                                )?.quantity ?? 0),
-                              0
-                            )
-                            const pu = gt?.pricePerUnit ?? 0
-                            const importe = qty * pu
-                            subtotal += importe
-                            const rowBg = idx % 2 === 0 ? "#ffffff" : "#d9f2fb"
-                            return (
-                              <tr key={gtId} style={{ background: rowBg }}>
-                                <td className="border px-4 py-1.5 text-xs font-bold uppercase" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
-                                  {gt?.name ?? "Desconocido"}
-                                </td>
-                                <td className="border px-4 py-1.5 text-right text-xs tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
-                                  {qty.toLocaleString()}
-                                </td>
-                                <td className="border px-4 py-1.5 text-right text-xs tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
-                                  {pu.toFixed(2)}
-                                </td>
-                                <td className="border px-4 py-1.5 text-right text-xs font-semibold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#00b0f0" }}>
-                                  {importe.toFixed(2)}
-                                </td>
-                              </tr>
-                            )
-                          })
+            {/* Pricing summaries */}
+            {allGarmentTypeIds.length > 0 && (() => {
+              let subtotal = 0
+              const itemRows = allGarmentTypeIds.map((gtId, idx) => {
+                const gt = data.garmentTypes.find((g) => g.id === gtId)
+                const qty = selectedPeriod.actas.reduce(
+                  (sum, a) => sum + (a.items.find((i) => i.garmentTypeId === gtId)?.quantity ?? 0),
+                  0
+                )
+                const pu = gt?.pricePerUnit ?? 0
+                const importe = qty * pu
+                subtotal += importe
+                return { gtId, gt, qty, pu, importe, idx }
+              })
+              const igv = subtotal * 0.18
+              const totalConIgv = subtotal + igv
 
-                          const igv = subtotal * 0.18
-                          const total = subtotal + igv
+              const tableHead = (
+                <thead>
+                  <tr style={{ background: "#00b0f0" }}>
+                    {["Detalle", "Cantidad", "P.U", "Importe"].map((h) => (
+                      <th key={h} className={`border px-4 py-2 text-xs font-bold uppercase ${h === "Detalle" ? "text-left" : "text-right"}`} style={{ color: "#000000", borderColor: "#0090c8" }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+              )
 
-                          return (
-                            <>
-                              {rows}
-                              <tr style={{ background: "#d9f2fb" }}>
-                                <td
-                                  colSpan={3}
-                                  className="border px-4 py-2 text-right text-xs font-bold uppercase"
-                                  style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}
-                                >
-                                  Sub Total
-                                </td>
-                                <td className="border px-4 py-2 text-right text-xs font-bold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
-                                  S/ {subtotal.toFixed(2)}
-                                </td>
-                              </tr>
-                              <tr style={{ background: "#d9f2fb" }}>
-                                <td
-                                  colSpan={3}
-                                  className="border px-4 py-1.5 text-right text-xs font-semibold"
-                                  style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}
-                                >
-                                  I.G.V. (18%)
-                                </td>
-                                <td className="border px-4 py-1.5 text-right text-xs font-semibold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
-                                  S/ {igv.toFixed(2)}
-                                </td>
-                              </tr>
-                              <tr style={{ background: "#00b0f0" }}>
-                                <td
-                                  colSpan={3}
-                                  className="border px-4 py-2 text-right text-xs font-bold uppercase"
-                                  style={{ borderColor: "#0090c8", color: "#000000" }}
-                                >
-                                  Total
-                                </td>
-                                <td className="border px-4 py-2 text-right text-xs font-bold tabular-nums" style={{ borderColor: "#0090c8", color: "#000000" }}>
-                                  S/ {total.toFixed(2)}
-                                </td>
-                              </tr>
-                            </>
-                          )
-                        })()}
-                      </tbody>
-                    </table>
+              const tableBody = (
+                <tbody>
+                  {itemRows.map(({ gtId, gt, qty, pu, importe, idx }) => (
+                    <tr key={gtId} style={{ background: idx % 2 === 0 ? "#ffffff" : "#d9f2fb" }}>
+                      <td className="border px-4 py-1.5 text-xs font-bold uppercase" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
+                        {gt?.name ?? "Desconocido"}
+                      </td>
+                      <td className="border px-4 py-1.5 text-right text-xs tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
+                        {qty.toLocaleString()}
+                      </td>
+                      <td className="border px-4 py-1.5 text-right text-xs tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
+                        {pu.toFixed(2)}
+                      </td>
+                      <td className="border px-4 py-1.5 text-right text-xs font-semibold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#00b0f0" }}>
+                        {importe.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              )
+
+              return (
+                <div className="flex flex-col gap-2">
+                  <h3 className="text-sm font-semibold text-foreground uppercase">
+                    {"Valorizacion - "}
+                    {selectedPeriod.name}
+                  </h3>
+                  <div className="flex flex-wrap gap-6">
+                    {/* Sin IGV */}
+                    <div className="flex flex-col gap-1">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sin IGV</p>
+                      <div className="overflow-x-auto rounded-lg" style={{ border: "2px solid #00b0f0" }}>
+                        <table className="border-collapse text-sm">
+                          {tableHead}
+                          {tableBody}
+                          <tfoot>
+                            <tr style={{ background: "#00b0f0" }}>
+                              <td colSpan={3} className="border px-4 py-2 text-right text-xs font-bold uppercase" style={{ borderColor: "#0090c8", color: "#000000" }}>
+                                Total
+                              </td>
+                              <td className="border px-4 py-2 text-right text-xs font-bold tabular-nums" style={{ borderColor: "#0090c8", color: "#000000" }}>
+                                S/ {subtotal.toFixed(2)}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Con IGV */}
+                    <div className="flex flex-col gap-1">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Con IGV (18%)</p>
+                      <div className="overflow-x-auto rounded-lg" style={{ border: "2px solid #00b0f0" }}>
+                        <table className="border-collapse text-sm">
+                          {tableHead}
+                          {tableBody}
+                          <tfoot>
+                            <tr style={{ background: "#d9f2fb" }}>
+                              <td colSpan={3} className="border px-4 py-2 text-right text-xs font-bold uppercase" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
+                                Sub Total
+                              </td>
+                              <td className="border px-4 py-2 text-right text-xs font-bold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
+                                S/ {subtotal.toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr style={{ background: "#d9f2fb" }}>
+                              <td colSpan={3} className="border px-4 py-1.5 text-right text-xs font-semibold" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
+                                I.G.V. (18%)
+                              </td>
+                              <td className="border px-4 py-1.5 text-right text-xs font-semibold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
+                                S/ {igv.toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr style={{ background: "#00b0f0" }}>
+                              <td colSpan={3} className="border px-4 py-2 text-right text-xs font-bold uppercase" style={{ borderColor: "#0090c8", color: "#000000" }}>
+                                Total
+                              </td>
+                              <td className="border px-4 py-2 text-right text-xs font-bold tabular-nums" style={{ borderColor: "#0090c8", color: "#000000" }}>
+                                S/ {totalConIgv.toFixed(2)}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
           </>
         )}
       </main>
