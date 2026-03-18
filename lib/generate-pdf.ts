@@ -132,11 +132,12 @@ export async function generateValorizacionPdf(options: PdfOptions) {
       getTypeName,
       getQty,
       getRowTotal: (gtId) => getRowTotal(sortedGuias, gtId),
+      getCompareTotal: (gtId) => getRowTotal(sortedActas, gtId),
     })
     y = getLastY(doc, y) + 4
   }
 
-  // ===== PRICING TABLE: SIN IGV =====
+  // ===== PRICING TABLE: SIN IGV (calculado con Guías) =====
   drawPricingTable(doc, {
     startY: y,
     marginL,
@@ -145,7 +146,7 @@ export async function generateValorizacionPdf(options: PdfOptions) {
     garmentTypeIds,
     getTypeName,
     getTypePrice,
-    getRowTotal: (gtId) => getRowTotal(sortedActas, gtId),
+    getRowTotal: (gtId) => getRowTotal(sortedGuias, gtId),
     includeIgv: false,
   })
   y = getLastY(doc, y) + 12
@@ -177,10 +178,12 @@ interface EntryTableOpts {
   getTypeName: (id: string) => string
   getQty: (entry: { items: { garmentTypeId: string; quantity: number }[] }, gtId: string) => number
   getRowTotal: (gtId: string) => number
+  /** Si se provee, marca con ● las filas cuyo total difiera */
+  getCompareTotal?: (gtId: string) => number
 }
 
 function drawEntryTable(doc: jsPDF, opts: EntryTableOpts): void {
-  const { startY, marginL, tableW, title, labelRow, totalLabel, entries, garmentTypeIds, getTypeName, getQty, getRowTotal } = opts
+  const { startY, marginL, tableW, title, labelRow, totalLabel, entries, garmentTypeIds, getTypeName, getQty, getRowTotal, getCompareTotal } = opts
 
   const cols = entries.length
   const nameColW = 28
@@ -193,23 +196,16 @@ function drawEntryTable(doc: jsPDF, opts: EntryTableOpts): void {
   const head2: string[] = [labelRow, ...entries.map(e => e.number || "-"), ""]
 
   const body: string[][] = garmentTypeIds.map(gtId => {
+    const rowTotal = getRowTotal(gtId)
+    const hasDiff = getCompareTotal ? getCompareTotal(gtId) !== rowTotal : false
     const row: string[] = [getTypeName(gtId)]
     for (const entry of entries) {
       const q = getQty(entry, gtId)
       row.push(q > 0 ? q.toLocaleString() : "")
     }
-    row.push(getRowTotal(gtId) > 0 ? getRowTotal(gtId).toLocaleString() : "")
+    row.push((rowTotal > 0 ? rowTotal.toLocaleString() : "") + (hasDiff ? " ●" : ""))
     return row
   })
-
-  // Grand total row
-  const grandRow: string[] = ["TOTAL GENERAL"]
-  for (const entry of entries) {
-    const colTotal = garmentTypeIds.reduce((s, id) => s + getQty(entry, id), 0)
-    grandRow.push(colTotal > 0 ? colTotal.toLocaleString() : "")
-  }
-  const grandTotal = garmentTypeIds.reduce((s, id) => s + getRowTotal(id), 0)
-  grandRow.push(grandTotal > 0 ? grandTotal.toLocaleString() : "")
 
   const colStyles: Record<number, { cellWidth: number; halign: "left" | "center" | "right" }> = {
     0: { cellWidth: nameColW, halign: "left" },
@@ -245,30 +241,18 @@ function drawEntryTable(doc: jsPDF, opts: EntryTableOpts): void {
         },
       })),
     ],
-    body: [
-      ...body.map((row, rIdx) =>
-        row.map((cell, cIdx) => ({
-          content: cell,
-          styles: {
-            halign: (cIdx === 0 ? "left" : cIdx === row.length - 1 ? "right" : "center") as "left" | "center" | "right",
-            fillColor: rIdx % 2 === 0 ? WHITE : ROW_ALT,
-            textColor: cIdx === row.length - 1 ? ACCENT_BLUE : TEXT_DARK,
-            fontStyle: (cIdx === row.length - 1 ? "bold" : "normal") as "bold" | "normal",
-            fontSize: 6.5,
-          },
-        }))
-      ),
-      grandRow.map((cell, cIdx) => ({
+    body: body.map((row, rIdx) =>
+      row.map((cell, cIdx) => ({
         content: cell,
         styles: {
-          halign: (cIdx === 0 ? "left" : cIdx === grandRow.length - 1 ? "right" : "center") as "left" | "center" | "right",
-          fillColor: PRIMARY_BG,
-          textColor: BLACK,
-          fontStyle: "bold" as const,
+          halign: (cIdx === 0 ? "left" : cIdx === row.length - 1 ? "right" : "center") as "left" | "center" | "right",
+          fillColor: rIdx % 2 === 0 ? WHITE : ROW_ALT,
+          textColor: cIdx === row.length - 1 ? ACCENT_BLUE : TEXT_DARK,
+          fontStyle: (cIdx === row.length - 1 ? "bold" : "normal") as "bold" | "normal",
           fontSize: 6.5,
         },
-      })),
-    ],
+      }))
+    ),
     theme: "grid",
     styles: { lineColor: [180, 180, 180], lineWidth: 0.2, cellPadding: 1, fontSize: 6.5 },
   })
@@ -290,25 +274,31 @@ interface PricingTableOpts {
 function drawPricingTable(doc: jsPDF, opts: PricingTableOpts): void {
   const { startY, marginL, tableW, period, garmentTypeIds, getTypeName, getTypePrice, getRowTotal, includeIgv } = opts
 
+  const puFactor = includeIgv ? 1.18 : 1
+  const fmtPU = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+  const fmtMoney = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
   let subtotal = 0
   const itemRows: string[][] = garmentTypeIds.map(gtId => {
     const qty = getRowTotal(gtId)
-    const pu = getTypePrice(gtId)
+    const pu = getTypePrice(gtId) * puFactor
     const importe = qty * pu
     subtotal += importe
-    return [getTypeName(gtId), qty > 0 ? qty.toLocaleString() : "0", pu.toFixed(2), importe.toFixed(2)]
+    return [getTypeName(gtId), qty > 0 ? qty.toLocaleString() : "0", fmtPU(pu), fmtMoney(importe)]
   })
 
-  const igv = subtotal * 0.18
-  const total = includeIgv ? subtotal + igv : subtotal
+  // Para includeIgv, el subtotal ya lleva el IGV incluido en el PU
+  // Para sinIgv, calculamos el IGV aparte para el footer
+  const baseSubtotal = includeIgv ? subtotal / 1.18 : subtotal
+  const igv = baseSubtotal * 0.18
 
   const summaryRows: string[][] = includeIgv
     ? [
-        ["SUB TOTAL", "", "", subtotal.toFixed(2)],
-        ["I.G.V. (18%)", "", "", igv.toFixed(2)],
-        ["TOTAL", "", "", total.toFixed(2)],
+        ["SUB TOTAL", "", "", fmtMoney(baseSubtotal)],
+        ["I.G.V. (18%)", "", "", fmtMoney(igv)],
+        ["TOTAL", "", "", fmtMoney(subtotal)],
       ]
-    : [["TOTAL (Sin IGV)", "", "", subtotal.toFixed(2)]]
+    : [["TOTAL (Sin IGV)", "", "", fmtMoney(subtotal)]]
 
   const label = includeIgv ? "CON IGV (18%)" : "SIN IGV"
   const colW = [tableW - 60, 20, 18, 22]  // dynamic: name fills remaining

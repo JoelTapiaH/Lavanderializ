@@ -22,6 +22,8 @@ interface ValorizacionTableProps {
   onUpdateEntry: (entryId: string, number: string, date: string, items: ValorizacionItem[]) => void
   onDeleteEntry: (id: string) => void
   onAddEntry: (number: string, date: string, items: ValorizacionItem[]) => void
+  /** Cuando se provee, marca con un punto las filas cuyo total difiera del total de comparación */
+  getCompareTotal?: (garmentTypeId: string) => number
 }
 
 function formatShortDate(dateStr: string) {
@@ -189,6 +191,7 @@ export function ValorizacionTable({
   onUpdateEntry,
   onDeleteEntry,
   onAddEntry,
+  getCompareTotal,
 }: ValorizacionTableProps) {
   const label = type === "acta" ? "Actas" : "Guias"
   const totalLabel = type === "acta" ? "Total en Actas" : "Total en Guias"
@@ -218,11 +221,6 @@ export function ValorizacionTable({
 
   const getRowTotal = (garmentTypeId: string) =>
     sortedEntries.reduce((sum, entry) => sum + getQty(entry, garmentTypeId), 0)
-
-  const grandTotal = garmentTypeIds.reduce(
-    (sum, gtId) => sum + getRowTotal(gtId),
-    0
-  )
 
   // Available garment types not yet in the table
   const availableGarmentTypes = garmentTypes.filter(
@@ -444,6 +442,9 @@ export function ValorizacionTable({
                 )}
                 <td className="border px-3 py-1 text-right text-xs font-bold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#00b0f0" }}>
                   {rowTotal > 0 ? rowTotal.toLocaleString() : ""}
+                  {getCompareTotal && getCompareTotal(gtId) !== rowTotal && (
+                    <span title="Diferencia con Total Actas" style={{ color: "#ef4444", marginLeft: 3 }}>●</span>
+                  )}
                 </td>
               </tr>
             )
@@ -477,38 +478,6 @@ export function ValorizacionTable({
               </td>
             </tr>
           )}
-
-          {/* Grand total row */}
-          <tr style={{ background: "#00b0f0" }}>
-            <td className="border px-3 py-2 text-xs font-bold uppercase" style={{ color: "#000000", borderColor: "#0090c8" }}>
-              Total General
-            </td>
-            {sortedEntries.map((entry) => {
-              const colTotal = garmentTypeIds.reduce(
-                (sum, gtId) => sum + getQty(entry, gtId),
-                0
-              )
-              return (
-                <td
-                  key={entry.id}
-                  className="border px-3 py-2 text-center text-xs font-bold tabular-nums"
-                  style={{ color: "#000000", borderColor: "#0090c8" }}
-                >
-                  {colTotal > 0 ? colTotal.toLocaleString() : ""}
-                </td>
-              )
-            })}
-            {addingColumn && (
-              <td className="border px-3 py-2 text-center text-xs font-bold tabular-nums" style={{ color: "#000000", borderColor: "#0090c8" }}>
-                {Object.values(newQuantities).reduce((s, v) => s + v, 0) || ""}
-              </td>
-            )}
-            <td className="border px-3 py-2 text-right text-xs font-bold tabular-nums" style={{ color: "#000000", borderColor: "#0090c8" }}>
-              {(grandTotal + (addingColumn ? Object.values(newQuantities).reduce((s, v) => s + v, 0) : 0)) > 0
-                ? (grandTotal + (addingColumn ? Object.values(newQuantities).reduce((s, v) => s + v, 0) : 0)).toLocaleString()
-                : ""}
-            </td>
-          </tr>
         </tbody>
 
         {/* Actions */}

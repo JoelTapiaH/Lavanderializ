@@ -274,25 +274,33 @@ export default function ValorizacionPage() {
                   addGuia(selectedPeriodId, number, date, items)
                   toast.success("Guia registrada")
                 }}
+                getCompareTotal={(gtId) =>
+                  selectedPeriod.actas.reduce(
+                    (sum, a) => sum + (a.items.find((i) => i.garmentTypeId === gtId)?.quantity ?? 0),
+                    0
+                  )
+                }
               />
             </div>
 
             {/* Pricing summaries */}
             {allGarmentTypeIds.length > 0 && (() => {
-              let subtotal = 0
-              const itemRows = allGarmentTypeIds.map((gtId, idx) => {
+              const items = allGarmentTypeIds.map((gtId, idx) => {
                 const gt = data.garmentTypes.find((g) => g.id === gtId)
-                const qty = selectedPeriod.actas.reduce(
-                  (sum, a) => sum + (a.items.find((i) => i.garmentTypeId === gtId)?.quantity ?? 0),
+                // Valorización calculada con Guías (Lavanderia → Mina)
+                const qty = selectedPeriod.guias.reduce(
+                  (sum, g) => sum + (g.items.find((i) => i.garmentTypeId === gtId)?.quantity ?? 0),
                   0
                 )
                 const pu = gt?.pricePerUnit ?? 0
-                const importe = qty * pu
-                subtotal += importe
-                return { gtId, gt, qty, pu, importe, idx }
+                return { gtId, gt, qty, pu, idx }
               })
+              const subtotal = items.reduce((s, { qty, pu }) => s + qty * pu, 0)
               const igv = subtotal * 0.18
               const totalConIgv = subtotal + igv
+
+              const fmtPU = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+              const fmtMoney = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
               const tableHead = (
                 <thead>
@@ -306,24 +314,28 @@ export default function ValorizacionPage() {
                 </thead>
               )
 
-              const tableBody = (
+              const makeBody = (puFactor: number) => (
                 <tbody>
-                  {itemRows.map(({ gtId, gt, qty, pu, importe, idx }) => (
-                    <tr key={gtId} style={{ background: idx % 2 === 0 ? "#ffffff" : "#d9f2fb" }}>
-                      <td className="border px-4 py-1.5 text-xs font-bold uppercase" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
-                        {gt?.name ?? "Desconocido"}
-                      </td>
-                      <td className="border px-4 py-1.5 text-right text-xs tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
-                        {qty.toLocaleString()}
-                      </td>
-                      <td className="border px-4 py-1.5 text-right text-xs tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
-                        {pu.toFixed(2)}
-                      </td>
-                      <td className="border px-4 py-1.5 text-right text-xs font-semibold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#00b0f0" }}>
-                        {importe.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map(({ gtId, gt, qty, pu, idx }) => {
+                    const effectivePU = pu * puFactor
+                    const importe = qty * effectivePU
+                    return (
+                      <tr key={gtId} style={{ background: idx % 2 === 0 ? "#ffffff" : "#d9f2fb" }}>
+                        <td className="border px-4 py-1.5 text-xs font-bold uppercase" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
+                          {gt?.name ?? "Desconocido"}
+                        </td>
+                        <td className="border px-4 py-1.5 text-right text-xs tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
+                          {qty.toLocaleString()}
+                        </td>
+                        <td className="border px-4 py-1.5 text-right text-xs tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
+                          {fmtPU(effectivePU)}
+                        </td>
+                        <td className="border px-4 py-1.5 text-right text-xs font-semibold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#00b0f0" }}>
+                          {fmtMoney(importe)}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               )
 
@@ -340,14 +352,14 @@ export default function ValorizacionPage() {
                       <div className="overflow-x-auto rounded-lg" style={{ border: "2px solid #00b0f0" }}>
                         <table className="border-collapse text-sm">
                           {tableHead}
-                          {tableBody}
+                          {makeBody(1)}
                           <tfoot>
                             <tr style={{ background: "#00b0f0" }}>
                               <td colSpan={3} className="border px-4 py-2 text-right text-xs font-bold uppercase" style={{ borderColor: "#0090c8", color: "#000000" }}>
                                 Total
                               </td>
                               <td className="border px-4 py-2 text-right text-xs font-bold tabular-nums" style={{ borderColor: "#0090c8", color: "#000000" }}>
-                                S/ {subtotal.toFixed(2)}
+                                S/ {fmtMoney(subtotal)}
                               </td>
                             </tr>
                           </tfoot>
@@ -355,20 +367,20 @@ export default function ValorizacionPage() {
                       </div>
                     </div>
 
-                    {/* Con IGV */}
+                    {/* Con IGV — PU afectado por IGV */}
                     <div className="flex flex-col gap-1">
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Con IGV (18%)</p>
                       <div className="overflow-x-auto rounded-lg" style={{ border: "2px solid #00b0f0" }}>
                         <table className="border-collapse text-sm">
                           {tableHead}
-                          {tableBody}
+                          {makeBody(1.18)}
                           <tfoot>
                             <tr style={{ background: "#d9f2fb" }}>
                               <td colSpan={3} className="border px-4 py-2 text-right text-xs font-bold uppercase" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
                                 Sub Total
                               </td>
                               <td className="border px-4 py-2 text-right text-xs font-bold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
-                                S/ {subtotal.toFixed(2)}
+                                S/ {fmtMoney(subtotal)}
                               </td>
                             </tr>
                             <tr style={{ background: "#d9f2fb" }}>
@@ -376,7 +388,7 @@ export default function ValorizacionPage() {
                                 I.G.V. (18%)
                               </td>
                               <td className="border px-4 py-1.5 text-right text-xs font-semibold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
-                                S/ {igv.toFixed(2)}
+                                S/ {fmtMoney(igv)}
                               </td>
                             </tr>
                             <tr style={{ background: "#00b0f0" }}>
@@ -384,7 +396,7 @@ export default function ValorizacionPage() {
                                 Total
                               </td>
                               <td className="border px-4 py-2 text-right text-xs font-bold tabular-nums" style={{ borderColor: "#0090c8", color: "#000000" }}>
-                                S/ {totalConIgv.toFixed(2)}
+                                S/ {fmtMoney(totalConIgv)}
                               </td>
                             </tr>
                           </tfoot>
