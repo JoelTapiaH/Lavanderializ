@@ -15,13 +15,13 @@ export const seedData: StoreData = {
     { id: "w6", name: "Raul Torres", dni: "34567891", groupId: "g3", createdAt: "2025-12-15T08:00:00Z" },
   ],
   garmentTypes: [
-    { id: "gt1", name: "Overol", pricePerUnit: 5.93, createdAt: "2025-12-01T08:00:00Z" },
-    { id: "gt2", name: "Frazada", pricePerUnit: 7.00, createdAt: "2025-12-01T08:00:00Z" },
-    { id: "gt3", name: "Camisa", pricePerUnit: 3.50, createdAt: "2025-12-01T08:00:00Z" },
-    { id: "gt4", name: "Pantalon", pricePerUnit: 4.00, createdAt: "2025-12-01T08:00:00Z" },
-    { id: "gt5", name: "Chaleco de seguridad", pricePerUnit: 5.00, createdAt: "2025-12-01T08:00:00Z" },
-    { id: "gt6", name: "Ropa interior", pricePerUnit: 2.00, createdAt: "2025-12-01T08:00:00Z" },
-    { id: "gt7", name: "Medias", pricePerUnit: 1.50, createdAt: "2025-12-01T08:00:00Z" },
+    { id: "gt1", name: "Overol", pricePerUnit: 5.93, active: true, createdAt: "2025-12-01T08:00:00Z" },
+    { id: "gt2", name: "Frazada", pricePerUnit: 7.00, active: true, createdAt: "2025-12-01T08:00:00Z" },
+    { id: "gt3", name: "Camisa", pricePerUnit: 3.50, active: true, createdAt: "2025-12-01T08:00:00Z" },
+    { id: "gt4", name: "Pantalon", pricePerUnit: 4.00, active: true, createdAt: "2025-12-01T08:00:00Z" },
+    { id: "gt5", name: "Chaleco de seguridad", pricePerUnit: 5.00, active: true, createdAt: "2025-12-01T08:00:00Z" },
+    { id: "gt6", name: "Ropa interior", pricePerUnit: 2.00, active: true, createdAt: "2025-12-01T08:00:00Z" },
+    { id: "gt7", name: "Medias", pricePerUnit: 1.50, active: true, createdAt: "2025-12-01T08:00:00Z" },
   ],
   orders: [
     {
@@ -82,6 +82,7 @@ export const seedData: StoreData = {
   valorizaciones: [
     {
       id: "v1",
+      projectId: null,
       name: "Enero 2026",
       startDate: "2026-01-26",
       endDate: "2026-02-22",
@@ -142,4 +143,8 @@ export const seedData: StoreData = {
       ],
     },
   ],
+  projects: [],
+  projectGarmentPrices: [],
+  inventoryItems: [],
+  inventoryMovements: [],
 }

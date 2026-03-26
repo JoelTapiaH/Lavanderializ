@@ -1,7 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react"
-import type { StoreData, Group, Worker, GarmentType, Order, OrderItem, OrderStatus, ValorizacionPeriod, Acta, Guia, ValorizacionItem } from "./types"
+import type { StoreData, Group, Worker, GarmentType, Order, OrderItem, OrderStatus, ValorizacionPeriod, Acta, Guia, ValorizacionItem, InventoryItem, InventoryMovement, Project, ProjectGarmentPrice } from "./types"
 import { supabase } from "./supabase"
 
 function generateId(): string {
@@ -13,7 +13,11 @@ const emptyData: StoreData = {
   workers: [],
   garmentTypes: [],
   orders: [],
+  projects: [],
+  projectGarmentPrices: [],
   valorizaciones: [],
+  inventoryItems: [],
+  inventoryMovements: [],
 }
 
 async function fetchAllData(): Promise<StoreData> {
@@ -28,6 +32,10 @@ async function fetchAllData(): Promise<StoreData> {
     { data: actaItems },
     { data: guias },
     { data: guiaItems },
+    { data: inventoryItemsRaw },
+    { data: inventoryMovementsRaw },
+    { data: projectsRaw },
+    { data: projectGarmentPricesRaw },
   ] = await Promise.all([
     supabase.from("groups").select("*").order("created_at"),
     supabase.from("workers").select("*").order("created_at"),
@@ -39,6 +47,10 @@ async function fetchAllData(): Promise<StoreData> {
     supabase.from("acta_items").select("*"),
     supabase.from("guias").select("*"),
     supabase.from("guia_items").select("*"),
+    supabase.from("inventory_items").select("*").order("created_at"),
+    supabase.from("inventory_movements").select("*").order("created_at", { ascending: false }),
+    supabase.from("projects").select("*").order("created_at"),
+    supabase.from("project_garment_prices").select("*"),
   ])
 
   const mappedOrders: Order[] = (orders ?? []).map((o) => ({
@@ -62,6 +74,7 @@ async function fetchAllData(): Promise<StoreData> {
 
   const mappedValorizaciones: ValorizacionPeriod[] = (valorizaciones ?? []).map((v) => ({
     id: v.id,
+    projectId: v.project_id ?? null,
     name: v.name,
     startDate: v.start_date,
     endDate: v.end_date,
@@ -91,9 +104,24 @@ async function fetchAllData(): Promise<StoreData> {
   return {
     groups: (groups ?? []).map((g) => ({ id: g.id, name: g.name, description: g.description, createdAt: g.created_at })),
     workers: (workers ?? []).map((w) => ({ id: w.id, name: w.name, dni: w.dni, groupId: w.group_id, createdAt: w.created_at })),
-    garmentTypes: (garmentTypes ?? []).map((gt) => ({ id: gt.id, name: gt.name, pricePerUnit: gt.price_per_unit, createdAt: gt.created_at })),
+    garmentTypes: (garmentTypes ?? []).map((gt) => ({ id: gt.id, name: gt.name, pricePerUnit: gt.price_per_unit, active: gt.active ?? true, createdAt: gt.created_at })),
     orders: mappedOrders,
     valorizaciones: mappedValorizaciones,
+    inventoryItems: (inventoryItemsRaw ?? []).map((i) => ({
+      id: i.id, code: i.code ?? "", name: i.name,
+      unit: i.unit, quantity: i.quantity, minStock: i.min_stock,
+      cost: i.cost, notes: i.notes, createdAt: i.created_at, updatedAt: i.updated_at,
+    })),
+    inventoryMovements: (inventoryMovementsRaw ?? []).map((m) => ({
+      id: m.id, itemId: m.item_id, type: m.type as "entrada" | "salida",
+      quantity: m.quantity, notes: m.notes, createdAt: m.created_at,
+    })),
+    projects: (projectsRaw ?? []).map((p) => ({
+      id: p.id, name: p.name, description: p.description, createdAt: p.created_at,
+    })),
+    projectGarmentPrices: (projectGarmentPricesRaw ?? []).map((p) => ({
+      id: p.id, projectId: p.project_id, garmentTypeId: p.garment_type_id, pricePerUnit: p.price_per_unit,
+    })),
   }
 }
 
@@ -115,6 +143,8 @@ interface StoreContextType {
   addGarmentType: (name: string, pricePerUnit?: number) => Promise<GarmentType>
   updateGarmentType: (id: string, name: string, pricePerUnit?: number) => Promise<void>
   deleteGarmentType: (id: string) => Promise<void>
+  eliminateGarmentType: (id: string) => Promise<void>
+  reactivateGarmentType: (id: string) => Promise<void>
   getGarmentType: (id: string) => GarmentType | undefined
   // Orders
   addOrder: (workerId: string, groupId: string, notes: string, items: Omit<OrderItem, "id" | "orderId">[]) => Promise<Order>
@@ -124,9 +154,15 @@ interface StoreContextType {
   getOrdersByWorker: (workerId: string) => Order[]
   getOrdersByGroup: (groupId: string) => Order[]
   getTotalItems: (order: Order) => number
+  // Projects
+  addProject: (name: string, description: string) => Promise<Project>
+  updateProject: (id: string, name: string, description: string) => Promise<void>
+  deleteProject: (id: string) => Promise<void>
+  getProject: (id: string) => Project | undefined
+  upsertProjectGarmentPrice: (projectId: string, garmentTypeId: string, pricePerUnit: number) => Promise<void>
   // Valorizaciones
-  addValorizacion: (name: string, startDate: string, endDate: string) => Promise<ValorizacionPeriod>
-  updateValorizacion: (id: string, name: string, startDate: string, endDate: string) => Promise<void>
+  addValorizacion: (name: string, startDate: string, endDate: string, projectId?: string | null) => Promise<ValorizacionPeriod>
+  updateValorizacion: (id: string, name: string, startDate: string, endDate: string, projectId?: string | null) => Promise<void>
   deleteValorizacion: (id: string) => Promise<void>
   getValorizacion: (id: string) => ValorizacionPeriod | undefined
   addActa: (valId: string, number: string, date: string, items: ValorizacionItem[]) => Promise<void>
@@ -135,6 +171,11 @@ interface StoreContextType {
   addGuia: (valId: string, number: string, date: string, items: ValorizacionItem[]) => Promise<void>
   updateGuia: (valId: string, guiaId: string, number: string, date: string, items: ValorizacionItem[]) => Promise<void>
   deleteGuia: (valId: string, guiaId: string) => Promise<void>
+  // Inventory
+  addInventoryItem: (code: string, name: string, unit: string, quantity: number, minStock: number, cost: number, notes: string) => Promise<InventoryItem>
+  updateInventoryItem: (id: string, code: string, name: string, unit: string, minStock: number, cost: number, notes: string) => Promise<void>
+  deleteInventoryItem: (id: string) => Promise<void>
+  addInventoryMovement: (itemId: string, type: "entrada" | "salida", quantity: number, notes: string) => Promise<InventoryMovement>
   // Reset
   resetData: () => Promise<void>
 }
@@ -198,9 +239,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // ── Garment Types ────────────────────────────────────────────────────────────
 
   const addGarmentType = useCallback(async (name: string, pricePerUnit = 0): Promise<GarmentType> => {
-    const gt: GarmentType = { id: generateId(), name, pricePerUnit, createdAt: new Date().toISOString() }
+    const gt: GarmentType = { id: generateId(), name, pricePerUnit, active: true, createdAt: new Date().toISOString() }
     setData((prev) => ({ ...prev, garmentTypes: [...prev.garmentTypes, gt] }))
-    await supabase.from("garment_types").insert({ id: gt.id, name, price_per_unit: pricePerUnit, created_at: gt.createdAt })
+    await supabase.from("garment_types").insert({ id: gt.id, name, price_per_unit: pricePerUnit, active: true, created_at: gt.createdAt })
     return gt
   }, [])
 
@@ -217,6 +258,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const deleteGarmentType = useCallback(async (id: string) => {
     setData((prev) => ({ ...prev, garmentTypes: prev.garmentTypes.filter((gt) => gt.id !== id) }))
     await supabase.from("garment_types").delete().eq("id", id)
+  }, [])
+
+  const eliminateGarmentType = useCallback(async (id: string) => {
+    setData((prev) => ({ ...prev, garmentTypes: prev.garmentTypes.map((gt) => gt.id === id ? { ...gt, active: false } : gt) }))
+    await supabase.from("garment_types").update({ active: false }).eq("id", id)
+  }, [])
+
+  const reactivateGarmentType = useCallback(async (id: string) => {
+    setData((prev) => ({ ...prev, garmentTypes: prev.garmentTypes.map((gt) => gt.id === id ? { ...gt, active: true } : gt) }))
+    await supabase.from("garment_types").update({ active: true }).eq("id", id)
   }, [])
 
   const getGarmentType = useCallback((id: string) => data.garmentTypes.find((gt) => gt.id === id), [data.garmentTypes])
@@ -267,19 +318,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // ── Valorizaciones ───────────────────────────────────────────────────────────
 
-  const addValorizacion = useCallback(async (name: string, startDate: string, endDate: string): Promise<ValorizacionPeriod> => {
-    const val: ValorizacionPeriod = { id: generateId(), name, startDate, endDate, actas: [], guias: [], createdAt: new Date().toISOString() }
+  const addValorizacion = useCallback(async (name: string, startDate: string, endDate: string, projectId: string | null = null): Promise<ValorizacionPeriod> => {
+    const val: ValorizacionPeriod = { id: generateId(), projectId, name, startDate, endDate, actas: [], guias: [], createdAt: new Date().toISOString() }
     setData((prev) => ({ ...prev, valorizaciones: [...prev.valorizaciones, val] }))
-    await supabase.from("valorizacion_periods").insert({ id: val.id, name, start_date: startDate, end_date: endDate, created_at: val.createdAt })
+    await supabase.from("valorizacion_periods").insert({ id: val.id, name, start_date: startDate, end_date: endDate, project_id: projectId, created_at: val.createdAt })
     return val
   }, [])
 
-  const updateValorizacion = useCallback(async (id: string, name: string, startDate: string, endDate: string) => {
+  const updateValorizacion = useCallback(async (id: string, name: string, startDate: string, endDate: string, projectId: string | null = null) => {
     setData((prev) => ({
       ...prev,
-      valorizaciones: prev.valorizaciones.map((v) => (v.id === id ? { ...v, name, startDate, endDate } : v)),
+      valorizaciones: prev.valorizaciones.map((v) => (v.id === id ? { ...v, name, startDate, endDate, projectId } : v)),
     }))
-    await supabase.from("valorizacion_periods").update({ name, start_date: startDate, end_date: endDate }).eq("id", id)
+    await supabase.from("valorizacion_periods").update({ name, start_date: startDate, end_date: endDate, project_id: projectId }).eq("id", id)
   }, [])
 
   const deleteValorizacion = useCallback(async (id: string) => {
@@ -377,6 +428,115 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     await supabase.from("guias").delete().eq("id", guiaId)
   }, [])
 
+  // ── Projects ─────────────────────────────────────────────────────────────────
+
+  const addProject = useCallback(async (name: string, description: string): Promise<Project> => {
+    const project: Project = { id: generateId(), name, description, createdAt: new Date().toISOString() }
+    setData((prev) => ({ ...prev, projects: [...prev.projects, project] }))
+    await supabase.from("projects").insert({ id: project.id, name, description, created_at: project.createdAt })
+    return project
+  }, [])
+
+  const updateProject = useCallback(async (id: string, name: string, description: string) => {
+    setData((prev) => ({ ...prev, projects: prev.projects.map((p) => (p.id === id ? { ...p, name, description } : p)) }))
+    await supabase.from("projects").update({ name, description }).eq("id", id)
+  }, [])
+
+  const deleteProject = useCallback(async (id: string) => {
+    setData((prev) => ({
+      ...prev,
+      projects: prev.projects.filter((p) => p.id !== id),
+      projectGarmentPrices: prev.projectGarmentPrices.filter((p) => p.projectId !== id),
+    }))
+    await supabase.from("project_garment_prices").delete().eq("project_id", id)
+    await supabase.from("projects").delete().eq("id", id)
+  }, [])
+
+  const getProject = useCallback((id: string) => data.projects.find((p) => p.id === id), [data.projects])
+
+  const upsertProjectGarmentPrice = useCallback(async (projectId: string, garmentTypeId: string, pricePerUnit: number) => {
+    const existing = data.projectGarmentPrices.find(
+      (p) => p.projectId === projectId && p.garmentTypeId === garmentTypeId
+    )
+    if (existing) {
+      setData((prev) => ({
+        ...prev,
+        projectGarmentPrices: prev.projectGarmentPrices.map((p) =>
+          p.id === existing.id ? { ...p, pricePerUnit } : p
+        ),
+      }))
+      await supabase.from("project_garment_prices").update({ price_per_unit: pricePerUnit }).eq("id", existing.id)
+    } else {
+      const newPrice: ProjectGarmentPrice = { id: generateId(), projectId, garmentTypeId, pricePerUnit }
+      setData((prev) => ({ ...prev, projectGarmentPrices: [...prev.projectGarmentPrices, newPrice] }))
+      await supabase.from("project_garment_prices").insert({
+        id: newPrice.id, project_id: projectId, garment_type_id: garmentTypeId, price_per_unit: pricePerUnit,
+      })
+    }
+  }, [data.projectGarmentPrices])
+
+  // ── Inventory ────────────────────────────────────────────────────────────────
+
+  const addInventoryItem = useCallback(async (
+    code: string, name: string, unit: string,
+    quantity: number, minStock: number, cost: number, notes: string
+  ): Promise<InventoryItem> => {
+    const now = new Date().toISOString()
+    const item: InventoryItem = { id: generateId(), code, name, unit, quantity, minStock, cost, notes, createdAt: now, updatedAt: now }
+    setData((prev) => ({ ...prev, inventoryItems: [...prev.inventoryItems, item] }))
+    await supabase.from("inventory_items").insert({
+      id: item.id, code, name, unit, quantity, min_stock: minStock, cost, notes,
+      created_at: now, updated_at: now,
+    })
+    return item
+  }, [])
+
+  const updateInventoryItem = useCallback(async (
+    id: string, code: string, name: string, unit: string,
+    minStock: number, cost: number, notes: string
+  ) => {
+    const updatedAt = new Date().toISOString()
+    setData((prev) => ({
+      ...prev,
+      inventoryItems: prev.inventoryItems.map((i) =>
+        i.id === id ? { ...i, code, name, unit, minStock, cost, notes, updatedAt } : i
+      ),
+    }))
+    await supabase.from("inventory_items").update({ code, name, unit, min_stock: minStock, cost, notes, updated_at: updatedAt }).eq("id", id)
+  }, [])
+
+  const deleteInventoryItem = useCallback(async (id: string) => {
+    setData((prev) => ({
+      ...prev,
+      inventoryItems: prev.inventoryItems.filter((i) => i.id !== id),
+      inventoryMovements: prev.inventoryMovements.filter((m) => m.itemId !== id),
+    }))
+    await supabase.from("inventory_movements").delete().eq("item_id", id)
+    await supabase.from("inventory_items").delete().eq("id", id)
+  }, [])
+
+  const addInventoryMovement = useCallback(async (
+    itemId: string, type: "entrada" | "salida", quantity: number, notes: string
+  ): Promise<InventoryMovement> => {
+    const now = new Date().toISOString()
+    const movement: InventoryMovement = { id: generateId(), itemId, type, quantity, notes, createdAt: now }
+    const delta = type === "entrada" ? quantity : -quantity
+    let newQuantity = 0
+    setData((prev) => {
+      const updated = prev.inventoryItems.map((i) => {
+        if (i.id !== itemId) return i
+        newQuantity = i.quantity + delta
+        return { ...i, quantity: newQuantity, updatedAt: now }
+      })
+      return { ...prev, inventoryItems: updated, inventoryMovements: [movement, ...prev.inventoryMovements] }
+    })
+    await supabase.from("inventory_movements").insert({
+      id: movement.id, item_id: itemId, type, quantity, notes, created_at: now,
+    })
+    await supabase.from("inventory_items").update({ quantity: newQuantity, updated_at: now }).eq("id", itemId)
+    return movement
+  }, [])
+
   // ── Reset ────────────────────────────────────────────────────────────────────
 
   const resetData = useCallback(async () => {
@@ -398,11 +558,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         loading,
         addGroup, updateGroup, deleteGroup, getGroup,
         addWorker, updateWorker, deleteWorker, getWorker, getWorkersByGroup,
-        addGarmentType, updateGarmentType, deleteGarmentType, getGarmentType,
+        addGarmentType, updateGarmentType, deleteGarmentType, eliminateGarmentType, reactivateGarmentType, getGarmentType,
         addOrder, updateOrderStatus, deleteOrder, getOrder, getOrdersByWorker, getOrdersByGroup, getTotalItems,
+        addProject, updateProject, deleteProject, getProject, upsertProjectGarmentPrice,
         addValorizacion, updateValorizacion, deleteValorizacion, getValorizacion,
         addActa, updateActa, deleteActa,
         addGuia, updateGuia, deleteGuia,
+        addInventoryItem, updateInventoryItem, deleteInventoryItem, addInventoryMovement,
         resetData,
       }}
     >

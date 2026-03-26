@@ -90,6 +90,22 @@ export async function generateValorizacionExcel(options: ExcelOptions) {
   for (let c = 2; c <= maxEntryCols + 1; c++) ws.getColumn(c).width = 12  // dates
   ws.getColumn(maxEntryCols + 2).width = 14  // total
 
+  // ── Logo ──────────────────────────────────────────────────────────────────
+  try {
+    if (typeof window !== "undefined") {
+      const res = await fetch("/images/logo-liz.png")
+      if (res.ok) {
+        const arrayBuffer = await res.arrayBuffer()
+        const uint8 = new Uint8Array(arrayBuffer)
+        let binary = ""
+        for (let i = 0; i < uint8.length; i++) binary += String.fromCharCode(uint8[i])
+        const base64 = btoa(binary)
+        const imageId = wb.addImage({ base64, extension: "png" })
+        ws.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 110, height: 44 } })
+      }
+    }
+  } catch { /* skip */ }
+
   let row = 1
 
   // ── Company header ────────────────────────────────────────────────────────
@@ -305,7 +321,7 @@ export async function generateValorizacionExcel(options: ExcelOptions) {
 
     styleData(r.getCell(3), bg, C_TEXT_DARK, false, "right")
     r.getCell(3).value = pu
-    r.getCell(3).numFmt = '#,##0.0000'
+    r.getCell(3).numFmt = '#,##0.000000'
 
     styleData(r.getCell(4), bg, C_TEXT_DARK, false, "right")
     r.getCell(4).value = importe

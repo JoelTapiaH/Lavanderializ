@@ -11,6 +11,8 @@ import {
   Shirt,
   BarChart3,
   Receipt,
+  Package,
+  Building2,
 } from "lucide-react"
 import {
   Sidebar,
@@ -31,7 +33,9 @@ const navItems = [
   { title: "Cuadrillas", href: "/grupos", icon: UsersRound },
   { title: "Mineros", href: "/mineros", icon: Users },
   { title: "Tipos de Prenda", href: "/prendas", icon: Shirt },
+  { title: "Proyectos", href: "/proyectos", icon: Building2 },
   { title: "Valorizacion", href: "/valorizacion", icon: Receipt },
+  { title: "Inventario", href: "/inventario", icon: Package },
   { title: "Reportes", href: "/reportes", icon: BarChart3 },
 ]
 

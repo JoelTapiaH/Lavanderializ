@@ -19,6 +19,7 @@ export interface GarmentType {
   id: string
   name: string
   pricePerUnit: number
+  active: boolean   // false = eliminado, ya no aparece en nuevas valorizaciones
   createdAt: string
 }
 
@@ -60,8 +61,23 @@ export interface Guia {
   items: ValorizacionItem[]
 }
 
+export interface Project {
+  id: string
+  name: string
+  description: string
+  createdAt: string
+}
+
+export interface ProjectGarmentPrice {
+  id: string
+  projectId: string
+  garmentTypeId: string
+  pricePerUnit: number
+}
+
 export interface ValorizacionPeriod {
   id: string
+  projectId: string | null
   name: string
   startDate: string
   endDate: string
@@ -70,10 +86,39 @@ export interface ValorizacionPeriod {
   createdAt: string
 }
 
+export interface InventoryItem {
+  id: string
+  code: string        // código del ítem, ej: "BLS-G"
+  name: string
+  unit: string        // "und", "kg", "lt", "cil", "bolsa", etc.
+  quantity: number    // stock actual
+  minStock: number    // stock mínimo — alerta cuando quantity < minStock
+  cost: number        // costo unitario (S/)
+  notes: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface InventoryMovement {
+  id: string
+  itemId: string
+  type: "entrada" | "salida"
+  quantity: number
+  notes: string
+  createdAt: string
+}
+
 export interface StoreData {
   groups: Group[]
   workers: Worker[]
   garmentTypes: GarmentType[]
   orders: Order[]
+  projects: Project[]
+  projectGarmentPrices: ProjectGarmentPrice[]
   valorizaciones: ValorizacionPeriod[]
+  inventoryItems: InventoryItem[]
+  inventoryMovements: InventoryMovement[]
 }
+
+// kept for backwards compat — not used after inventory redesign
+export type InventoryCategory = string

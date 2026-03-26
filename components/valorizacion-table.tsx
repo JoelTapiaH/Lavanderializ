@@ -222,9 +222,9 @@ export function ValorizacionTable({
   const getRowTotal = (garmentTypeId: string) =>
     sortedEntries.reduce((sum, entry) => sum + getQty(entry, garmentTypeId), 0)
 
-  // Available garment types not yet in the table
+  // Available garment types not yet in the table (only active ones)
   const availableGarmentTypes = garmentTypes.filter(
-    (gt) => !garmentTypeIds.includes(gt.id)
+    (gt) => !garmentTypeIds.includes(gt.id) && gt.active !== false
   )
 
   // Handler: update a single cell quantity

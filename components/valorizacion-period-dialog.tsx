@@ -12,6 +12,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { toast } from "sonner"
 
 interface ValorizacionPeriodDialogProps {
@@ -29,6 +36,7 @@ export function ValorizacionPeriodDialog({
   const [name, setName] = useState("")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
+  const [projectId, setProjectId] = useState("")
 
   const editing = editId ? data.valorizaciones.find((v) => v.id === editId) : null
 
@@ -38,10 +46,12 @@ export function ValorizacionPeriodDialog({
         setName(editing.name)
         setStartDate(editing.startDate)
         setEndDate(editing.endDate)
+        setProjectId(editing.projectId ?? "")
       } else {
         setName("")
         setStartDate("")
         setEndDate("")
+        setProjectId("")
       }
     }
   }, [open, editing])
@@ -51,11 +61,15 @@ export function ValorizacionPeriodDialog({
       toast.error("Completa todos los campos")
       return
     }
+    if (!projectId) {
+      toast.error("Selecciona un proyecto")
+      return
+    }
     if (editing) {
-      updateValorizacion(editing.id, name.trim(), startDate, endDate)
+      updateValorizacion(editing.id, name.trim(), startDate, endDate, projectId)
       toast.success("Periodo actualizado")
     } else {
-      addValorizacion(name.trim(), startDate, endDate)
+      addValorizacion(name.trim(), startDate, endDate, projectId)
       toast.success("Periodo creado")
     }
     onOpenChange(false)
@@ -78,6 +92,27 @@ export function ValorizacionPeriodDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="period-project">Proyecto <span className="text-destructive">*</span></Label>
+            {data.projects.length === 0 ? (
+              <p className="text-sm text-destructive">
+                No hay proyectos. Crea uno primero en la sección <strong>Proyectos</strong>.
+              </p>
+            ) : (
+              <Select value={projectId} onValueChange={setProjectId}>
+                <SelectTrigger id="period-project">
+                  <SelectValue placeholder="Selecciona un proyecto" />
+                </SelectTrigger>
+                <SelectContent>
+                  {data.projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <div className="flex gap-4">
             <div className="flex flex-1 flex-col gap-1.5">
@@ -104,7 +139,7 @@ export function ValorizacionPeriodDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit}>
+          <Button onClick={handleSubmit} disabled={data.projects.length === 0}>
             {editing ? "Guardar" : "Crear Periodo"}
           </Button>
         </DialogFooter>

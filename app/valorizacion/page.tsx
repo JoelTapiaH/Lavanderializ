@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Plus, Trash2, Pencil, FileDown, Loader2, FileSpreadsheet } from "lucide-react"
+import { Plus, Trash2, Pencil, FileDown, Loader2, FileSpreadsheet, Building2 } from "lucide-react"
 import { toast } from "sonner"
 import { ValorizacionTable } from "@/components/valorizacion-table"
 import { ValorizacionPeriodDialog } from "@/components/valorizacion-period-dialog"
@@ -32,8 +32,19 @@ export default function ValorizacionPage() {
     deleteGuia,
   } = useStore()
 
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(
+    data.valorizaciones[0]?.projectId ?? data.projects[0]?.id ?? ""
+  )
+
+  const filteredValorizaciones = useMemo(
+    () => selectedProjectId
+      ? data.valorizaciones.filter((v) => v.projectId === selectedProjectId)
+      : data.valorizaciones,
+    [data.valorizaciones, selectedProjectId]
+  )
+
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>(
-    data.valorizaciones[0]?.id ?? ""
+    filteredValorizaciones[0]?.id ?? ""
   )
   const [periodDialogOpen, setPeriodDialogOpen] = useState(false)
   const [editPeriodId, setEditPeriodId] = useState<string | null>(null)
@@ -42,6 +53,25 @@ export default function ValorizacionPage() {
   const selectedPeriod = data.valorizaciones.find(
     (v) => v.id === selectedPeriodId
   )
+
+  const selectedProject = data.projects.find((p) => p.id === selectedProjectId)
+
+  function handleProjectChange(projectId: string) {
+    setSelectedProjectId(projectId)
+    const first = data.valorizaciones.find((v) => v.projectId === projectId)
+    setSelectedPeriodId(first?.id ?? "")
+  }
+
+  // Garment types with per-project price overrides applied
+  const effectiveGarmentTypes = useMemo(() => {
+    if (!selectedPeriod?.projectId) return data.garmentTypes
+    const overrides = data.projectGarmentPrices.filter((p) => p.projectId === selectedPeriod.projectId)
+    if (overrides.length === 0) return data.garmentTypes
+    return data.garmentTypes.map((gt) => {
+      const override = overrides.find((o) => o.garmentTypeId === gt.id)
+      return override ? { ...gt, pricePerUnit: override.pricePerUnit } : gt
+    })
+  }, [selectedPeriod, data.garmentTypes, data.projectGarmentPrices])
 
   // Collect all unique garment type IDs used across actas and guias
   const allGarmentTypeIds = useMemo(() => {
@@ -66,7 +96,7 @@ export default function ValorizacionPage() {
     try {
       await generateValorizacionPdf({
         period: selectedPeriod,
-        garmentTypes: data.garmentTypes,
+        garmentTypes: effectiveGarmentTypes,
         garmentTypeIds: allGarmentTypeIds,
       })
       toast.success("PDF generado exitosamente")
@@ -83,7 +113,7 @@ export default function ValorizacionPage() {
     try {
       generateValorizacionExcel({
         period: selectedPeriod,
-        garmentTypes: data.garmentTypes,
+        garmentTypes: effectiveGarmentTypes,
         garmentTypeIds: allGarmentTypeIds,
       })
       toast.success("Excel generado exitosamente")
@@ -138,34 +168,55 @@ export default function ValorizacionPage() {
         }
       />
       <main className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
-        {/* Period selector */}
+        {/* Project + Period selector */}
         <Card>
           <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-              <Label className="text-sm font-medium text-foreground whitespace-nowrap">
-                Periodo:
-              </Label>
-              {data.valorizaciones.length > 0 ? (
-                <Select
-                  value={selectedPeriodId}
-                  onValueChange={setSelectedPeriodId}
-                >
-                  <SelectTrigger className="w-[260px]">
-                    <SelectValue placeholder="Selecciona un periodo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {data.valorizaciones.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No hay periodos creados.
-                </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              {/* Project filter */}
+              {data.projects.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <Select value={selectedProjectId} onValueChange={handleProjectChange}>
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue placeholder="Selecciona un proyecto" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {data.projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               )}
+
+              {/* Period filter */}
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium text-foreground whitespace-nowrap">
+                  Periodo:
+                </Label>
+                {filteredValorizaciones.length > 0 ? (
+                  <Select value={selectedPeriodId} onValueChange={setSelectedPeriodId}>
+                    <SelectTrigger className="w-[220px]">
+                      <SelectValue placeholder="Selecciona un periodo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredValorizaciones.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {selectedProjectId
+                      ? "No hay periodos para este proyecto."
+                      : "No hay periodos creados."}
+                  </p>
+                )}
+              </div>
             </div>
             {selectedPeriod && (
               <div className="flex items-center gap-2">
@@ -220,7 +271,10 @@ export default function ValorizacionPage() {
                 Valorizacion del Servicio de Lavanderia
               </h2>
               <p className="text-xs font-semibold" style={{ color: "#000000" }}>
-                {"LAVANDERIA LIZ - PERIODO DEL SERVICIO "}
+                {selectedPeriod.projectId
+                  ? (data.projects.find((p) => p.id === selectedPeriod.projectId)?.name ?? "") + " - "
+                  : "LAVANDERIA LIZ - "}
+                {"PERIODO DEL SERVICIO "}
                 {formatDateRange()}
               </p>
             </div>
@@ -286,7 +340,7 @@ export default function ValorizacionPage() {
             {/* Pricing summaries */}
             {allGarmentTypeIds.length > 0 && (() => {
               const items = allGarmentTypeIds.map((gtId, idx) => {
-                const gt = data.garmentTypes.find((g) => g.id === gtId)
+                const gt = effectiveGarmentTypes.find((g) => g.id === gtId)
                 // Valorización calculada con Guías (Lavanderia → Mina)
                 const qty = selectedPeriod.guias.reduce(
                   (sum, g) => sum + (g.items.find((i) => i.garmentTypeId === gtId)?.quantity ?? 0),
@@ -299,7 +353,7 @@ export default function ValorizacionPage() {
               const igv = subtotal * 0.18
               const totalConIgv = subtotal + igv
 
-              const fmtPU = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+              const fmtPU = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 6, maximumFractionDigits: 6 })
               const fmtMoney = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
               const tableHead = (
@@ -314,7 +368,7 @@ export default function ValorizacionPage() {
                 </thead>
               )
 
-              const makeBody = (puFactor: number) => (
+              const makeBody = (puFactor: number, fmtPrice: (n: number) => string) => (
                 <tbody>
                   {items.map(({ gtId, gt, qty, pu, idx }) => {
                     const effectivePU = pu * puFactor
@@ -328,7 +382,7 @@ export default function ValorizacionPage() {
                           {qty.toLocaleString()}
                         </td>
                         <td className="border px-4 py-1.5 text-right text-xs tabular-nums" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>
-                          {fmtPU(effectivePU)}
+                          {fmtPrice(effectivePU)}
                         </td>
                         <td className="border px-4 py-1.5 text-right text-xs font-semibold tabular-nums" style={{ borderColor: "#8cd7f0", color: "#00b0f0" }}>
                           {fmtMoney(importe)}
@@ -352,7 +406,7 @@ export default function ValorizacionPage() {
                       <div className="overflow-x-auto rounded-lg" style={{ border: "2px solid #00b0f0" }}>
                         <table className="border-collapse text-sm">
                           {tableHead}
-                          {makeBody(1)}
+                          {makeBody(1, fmtPU)}
                           <tfoot>
                             <tr style={{ background: "#00b0f0" }}>
                               <td colSpan={3} className="border px-4 py-2 text-right text-xs font-bold uppercase" style={{ borderColor: "#0090c8", color: "#000000" }}>
@@ -373,7 +427,7 @@ export default function ValorizacionPage() {
                       <div className="overflow-x-auto rounded-lg" style={{ border: "2px solid #00b0f0" }}>
                         <table className="border-collapse text-sm">
                           {tableHead}
-                          {makeBody(1.18)}
+                          {makeBody(1.18, fmtMoney)}
                           <tfoot>
                             <tr style={{ background: "#d9f2fb" }}>
                               <td colSpan={3} className="border px-4 py-2 text-right text-xs font-bold uppercase" style={{ borderColor: "#8cd7f0", color: "#1a3a6e" }}>

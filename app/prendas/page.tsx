@@ -24,13 +24,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Plus, Pencil, Trash2, Shirt } from "lucide-react"
+import { Plus, Pencil, Trash2, Shirt, Ban, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
 export default function PrendasPage() {
-  const { data, addGarmentType, updateGarmentType, deleteGarmentType } = useStore()
+  const { data, addGarmentType, updateGarmentType, deleteGarmentType, eliminateGarmentType, reactivateGarmentType } = useStore()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState("")
@@ -73,15 +73,24 @@ export default function PrendasPage() {
     resetForm()
   }
 
+  const handleEliminate = (id: string) => {
+    eliminateGarmentType(id)
+    toast.success("Prenda eliminada de la valorización")
+  }
+
+  const handleReactivate = (id: string) => {
+    reactivateGarmentType(id)
+    toast.success("Prenda reactivada")
+  }
+
   const handleDelete = (id: string) => {
-    // Check if any order item uses this garment type
     const inUse = data.orders.some(o => o.items.some(i => i.garmentTypeId === id))
     if (inUse) {
-      toast.error("No puedes eliminar un tipo de prenda que ya tiene ordenes asociadas")
+      toast.error("No puedes borrar una prenda que tiene órdenes asociadas")
       return
     }
     deleteGarmentType(id)
-    toast.success("Tipo de prenda eliminado")
+    toast.success("Tipo de prenda borrado")
   }
 
   // Count how many items of each type exist across all orders
@@ -177,13 +186,20 @@ export default function PrendasPage() {
                 </TableHeader>
                 <TableBody>
                   {data.garmentTypes.map((gt) => (
-                    <TableRow key={gt.id}>
+                    <TableRow key={gt.id} className={!gt.active ? "opacity-50" : ""}>
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-md ${gt.active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
                             <Shirt className="h-4 w-4" />
                           </div>
-                          <span className="font-medium text-card-foreground">{gt.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-card-foreground">{gt.name}</span>
+                            {!gt.active && (
+                              <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                                Eliminado
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-card-foreground font-medium tabular-nums">
@@ -204,16 +220,36 @@ export default function PrendasPage() {
                             onClick={() => openEdit(gt.id)}
                           >
                             <Pencil className="h-3.5 w-3.5" />
-                            <span className="sr-only">Editar</span>
                           </Button>
+                          {gt.active ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-destructive hover:text-destructive gap-1"
+                              onClick={() => handleEliminate(gt.id)}
+                            >
+                              <Ban className="h-3.5 w-3.5" />
+                              Eliminar
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-green-600 hover:text-green-700 gap-1"
+                              onClick={() => handleReactivate(gt.id)}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" />
+                              Reactivar
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            title="Borrar permanentemente"
                             onClick={() => handleDelete(gt.id)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                            <span className="sr-only">Eliminar</span>
                           </Button>
                         </div>
                       </TableCell>

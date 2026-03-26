@@ -275,7 +275,9 @@ function drawPricingTable(doc: jsPDF, opts: PricingTableOpts): void {
   const { startY, marginL, tableW, period, garmentTypeIds, getTypeName, getTypePrice, getRowTotal, includeIgv } = opts
 
   const puFactor = includeIgv ? 1.18 : 1
-  const fmtPU = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+  const fmtPU = includeIgv
+    ? (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 6, maximumFractionDigits: 6 })
   const fmtMoney = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   let subtotal = 0
