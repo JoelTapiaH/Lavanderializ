@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useMemo } from "react"
@@ -19,228 +20,490 @@ import {
   YAxis,
   CartesianGrid,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  Legend,
 } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import type { OrderStatus } from "@/lib/types"
-
-const STATUS_COLORS: Record<OrderStatus, string> = {
-  recibido: "#d97706",
-  lavando: "#0284c7",
-  listo: "#059669",
-  entregado: "#64748b",
-}
-
-const STATUS_LABELS: Record<OrderStatus, string> = {
-  recibido: "Recibido",
-  lavando: "Lavando",
-  listo: "Listo",
-  entregado: "Entregado",
-}
+import { Receipt, Package, TrendingUp, Building2, Users, CheckCircle2, Clock } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
 
 export default function ReportesPage() {
-  const { data, getGroup, getWorker } = useStore()
+  const { data } = useStore()
 
-  const statusData = useMemo(() => {
-    const counts: Record<OrderStatus, number> = { recibido: 0, lavando: 0, listo: 0, entregado: 0 }
-    data.orders.forEach(o => counts[o.status]++)
-    return Object.entries(counts).map(([status, count]) => ({
-      name: STATUS_LABELS[status as OrderStatus],
-      value: count,
-      fill: STATUS_COLORS[status as OrderStatus],
-    }))
-  }, [data.orders])
+  // Helper: get effective price for a garment type within a project
+  function getEffectivePrice(garmentTypeId: string, projectId: string | null): number {
+    if (projectId) {
+      const override = data.projectGarmentPrices.find(
+        p => p.projectId === projectId && p.garmentTypeId === garmentTypeId
+      )
+      if (override) return override.pricePerUnit
+    }
+    return data.garmentTypes.find(g => g.id === garmentTypeId)?.pricePerUnit ?? 0
+  }
 
-  const groupReport = useMemo(() => {
-    return data.groups.map(g => {
-      const groupOrders = data.orders.filter(o => o.groupId === g.id)
-      const totalItems = groupOrders.reduce((sum, o) => sum + o.items.reduce((s, i) => s + i.quantity, 0), 0)
-      const pending = groupOrders.filter(o => o.status !== "entregado").length
-      return {
-        name: g.name,
-        ordenes: groupOrders.length,
-        prendas: totalItems,
-        pendientes: pending,
+  // Helper: total prendas from guias for a period
+  function totalGuiasPrendas(period: typeof data.valorizaciones[0]): number {
+    return period.guias.reduce((sum, g) => sum + g.items.reduce((s, i) => s + i.quantity, 0), 0)
+  }
+
+  // Helper: total prendas from actas for a period
+  function totalActasPrendas(period: typeof data.valorizaciones[0]): number {
+    return period.actas.reduce((sum, a) => sum + a.items.reduce((s, i) => s + i.quantity, 0), 0)
+  }
+
+  // Helper: total importe for a period (from guias, with effective prices)
+  function totalImporte(period: typeof data.valorizaciones[0]): number {
+    let total = 0
+    for (const guia of period.guias) {
+      for (const item of guia.items) {
+        total += item.quantity * getEffectivePrice(item.garmentTypeId, period.projectId)
       }
-    })
-  }, [data.groups, data.orders])
+    }
+    return total
+  }
 
-  const garmentReport = useMemo(() => {
+  const sortedPeriods = useMemo(
+    () => [...data.valorizaciones].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    [data.valorizaciones]
+  )
+
+  // KPI cards
+  const kpis = useMemo(() => {
+    const totalPeriodos = sortedPeriods.length
+    const totalPrendas = sortedPeriods.reduce((s, p) => s + totalGuiasPrendas(p), 0)
+    const totalS = sortedPeriods.reduce((s, p) => s + totalImporte(p), 0)
+    const totalProyectos = data.projects.length
+    return { totalPeriodos, totalPrendas, totalS, totalProyectos }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortedPeriods, data.projects, data.projectGarmentPrices, data.garmentTypes])
+
+  // Bar chart: importe por periodo
+  const importeData = useMemo(() =>
+    sortedPeriods.map(p => ({
+      name: p.name,
+      importe: Math.round(totalImporte(p) * 100) / 100,
+    })),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [sortedPeriods, data.projectGarmentPrices, data.garmentTypes])
+
+  // Bar chart: prendas por tipo (from guías, all periods)
+  const prendasData = useMemo(() => {
     const countMap: Record<string, number> = {}
-    data.orders.forEach(o => {
-      o.items.forEach(item => {
-        countMap[item.garmentTypeId] = (countMap[item.garmentTypeId] || 0) + item.quantity
-      })
-    })
+    for (const period of sortedPeriods) {
+      for (const guia of period.guias) {
+        for (const item of guia.items) {
+          countMap[item.garmentTypeId] = (countMap[item.garmentTypeId] || 0) + item.quantity
+        }
+      }
+    }
     return data.garmentTypes
-      .map(gt => ({
-        name: gt.name,
-        cantidad: countMap[gt.id] || 0,
-      }))
+      .map(gt => ({ name: gt.name, cantidad: countMap[gt.id] || 0 }))
+      .filter(r => r.cantidad > 0)
       .sort((a, b) => b.cantidad - a.cantidad)
-  }, [data.garmentTypes, data.orders])
+  }, [sortedPeriods, data.garmentTypes])
 
-  const topWorkers = useMemo(() => {
-    const countMap: Record<string, number> = {}
-    data.orders.forEach(o => {
-      countMap[o.workerId] = (countMap[o.workerId] || 0) + 1
-    })
-    return Object.entries(countMap)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 10)
-      .map(([workerId, count]) => {
-        const worker = getWorker(workerId)
-        const group = worker ? getGroup(worker.groupId) : undefined
+  // Table: resumen por proyecto
+  const proyectoReport = useMemo(() =>
+    data.projects.map(proj => {
+      const periods = sortedPeriods.filter(p => p.projectId === proj.id)
+      const prendas = periods.reduce((s, p) => s + totalGuiasPrendas(p), 0)
+      const importe = periods.reduce((s, p) => s + totalImporte(p), 0)
+      return { name: proj.name, periodos: periods.length, prendas, importe }
+    }),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [data.projects, sortedPeriods, data.projectGarmentPrices, data.garmentTypes])
+
+  // Table: actas vs guías por periodo
+  const actasGuiasReport = useMemo(() =>
+    sortedPeriods.map(p => {
+      const actas = totalActasPrendas(p)
+      const guias = totalGuiasPrendas(p)
+      const diff = guias - actas
+      const project = data.projects.find(pr => pr.id === p.projectId)
+      return {
+        name: p.name,
+        project: project?.name ?? "-",
+        actas,
+        guias,
+        diff,
+      }
+    }),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [sortedPeriods, data.projects])
+
+  const fmtMoney = (v: number) =>
+    v.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  // ── Planilla metrics ────────────────────────────────────────────────────────
+
+  const planillaKpis = useMemo(() => {
+    const allRecords = data.payrollPeriods.flatMap((p) => p.records)
+    return {
+      empleadosActivos: data.employees.filter((e) => e.estado === "activo").length,
+      totalPagado: allRecords.filter((r) => r.pagado).reduce((s, r) => s + r.netoAPagar, 0),
+      totalPendiente: allRecords.filter((r) => !r.pagado).reduce((s, r) => s + r.netoAPagar, 0),
+      periodosAbiertos: data.payrollPeriods.filter((p) => p.estado === "abierto").length,
+    }
+  }, [data.payrollPeriods, data.employees])
+
+  const planillaBarData = useMemo(() =>
+    [...data.payrollPeriods]
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))
+      .map((p) => ({
+        name: p.nombre,
+        pagado: Math.round(p.records.filter((r) => r.pagado).reduce((s, r) => s + r.netoAPagar, 0) * 100) / 100,
+        pendiente: Math.round(p.records.filter((r) => !r.pagado).reduce((s, r) => s + r.netoAPagar, 0) * 100) / 100,
+      })),
+  [data.payrollPeriods])
+
+  const planillaEmpReport = useMemo(() =>
+    data.employees
+      .map((emp) => {
+        const recs = data.payrollPeriods.flatMap((p) => p.records).filter((r) => r.employeeId === emp.id)
+        if (recs.length === 0) return null
         return {
-          name: worker?.name ?? "Desconocido",
-          group: group?.name ?? "-",
-          ordenes: count,
+          nombre: emp.nombre,
+          cargo: emp.cargo || "—",
+          estado: emp.estado,
+          periodos: recs.length,
+          totalNeto: recs.reduce((s, r) => s + r.netoAPagar, 0),
+          totalPagado: recs.filter((r) => r.pagado).reduce((s, r) => s + r.netoAPagar, 0),
+          totalPendiente: recs.filter((r) => !r.pagado).reduce((s, r) => s + r.netoAPagar, 0),
         }
       })
-  }, [data.orders, getWorker, getGroup])
+      .filter(Boolean) as { nombre: string; cargo: string; estado: string; periodos: number; totalNeto: number; totalPagado: number; totalPendiente: number }[],
+  [data.payrollPeriods, data.employees])
 
   return (
     <>
       <PageHeader
         title="Reportes"
-        description="Estadisticas y resumenes de la planta"
+        description="Estadisticas y resumenes basados en valorizaciones y planilla"
       />
-      <main className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Status pie chart */}
+      <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
+      <Tabs defaultValue="valorizaciones">
+        <TabsList>
+          <TabsTrigger value="valorizaciones">Valorizaciones</TabsTrigger>
+          <TabsTrigger value="planilla">Planilla</TabsTrigger>
+        </TabsList>
+
+        {/* ── VALORIZACIONES TAB ──────────────────────────────────────────── */}
+        <TabsContent value="valorizaciones" className="space-y-6 pt-2">
+
+        {/* KPI cards */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base text-card-foreground">Ordenes por Estado</CardTitle>
-              <CardDescription>Distribucion actual de ordenes</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer
-                config={{
-                  recibido: { label: "Recibido", color: STATUS_COLORS.recibido },
-                  lavando: { label: "Lavando", color: STATUS_COLORS.lavando },
-                  listo: { label: "Listo", color: STATUS_COLORS.listo },
-                  entregado: { label: "Entregado", color: STATUS_COLORS.entregado },
-                }}
-                className="h-[300px]"
-              >
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={statusData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={4}
-                      dataKey="value"
-                      label={({ name, value }) => `${name}: ${value}`}
-                    >
-                      {statusData.map((entry, index) => (
-                        <Cell key={index} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </ChartContainer>
+            <CardContent className="pt-6 flex items-center gap-4">
+              <div className="rounded-full bg-primary/10 p-3">
+                <Receipt className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{kpis.totalPeriodos}</p>
+                <p className="text-xs text-muted-foreground">Periodos de Valorización</p>
+              </div>
             </CardContent>
           </Card>
-
-          {/* Garment bar chart */}
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base text-card-foreground">Prendas mas Lavadas</CardTitle>
-              <CardDescription>Cantidad total por tipo de prenda</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer
-                config={{
-                  cantidad: { label: "Cantidad", color: "#4472a8" },
-                }}
-                className="h-[300px]"
-              >
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={garmentReport} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="cantidad" fill="#4472a8" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartContainer>
+            <CardContent className="pt-6 flex items-center gap-4">
+              <div className="rounded-full bg-blue-100 p-3">
+                <Package className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{kpis.totalPrendas.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">Total Prendas (Guías)</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6 flex items-center gap-4">
+              <div className="rounded-full bg-green-100 p-3">
+                <TrendingUp className="h-5 w-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">S/ {fmtMoney(kpis.totalS)}</p>
+                <p className="text-xs text-muted-foreground">Importe Total (Sin IGV)</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6 flex items-center gap-4">
+              <div className="rounded-full bg-purple-100 p-3">
+                <Building2 className="h-5 w-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{kpis.totalProyectos}</p>
+                <p className="text-xs text-muted-foreground">Proyectos Activos</p>
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Group report table */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Importe por periodo */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base text-card-foreground">Importe por Periodo (S/)</CardTitle>
+              <CardDescription>Total valorizado sin IGV por cada periodo</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {importeData.length === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">Sin datos</p>
+              ) : (
+                <ChartContainer
+                  config={{ importe: { label: "Importe S/", color: "#00b0f0" } }}
+                  className="h-[280px]"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={importeData} margin={{ top: 5, right: 20, left: 0, bottom: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" interval={0} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey="importe" fill="#00b0f0" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Prendas por tipo */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base text-card-foreground">Prendas por Tipo</CardTitle>
+              <CardDescription>Cantidad total despachada (Guías, todos los periodos)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {prendasData.length === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">Sin datos</p>
+              ) : (
+                <ChartContainer
+                  config={{ cantidad: { label: "Cantidad", color: "#4472a8" } }}
+                  className="h-[280px]"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={prendasData} margin={{ top: 5, right: 20, left: 0, bottom: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" interval={0} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey="cantidad" fill="#4472a8" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Resumen por proyecto */}
+        {proyectoReport.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base text-card-foreground">Resumen por Proyecto</CardTitle>
+              <CardDescription>Periodos, prendas e importe agrupados por proyecto</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Proyecto</TableHead>
+                    <TableHead className="text-right">Periodos</TableHead>
+                    <TableHead className="text-right">Total Prendas</TableHead>
+                    <TableHead className="text-right">Importe (Sin IGV)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {proyectoReport.map((row) => (
+                    <TableRow key={row.name}>
+                      <TableCell className="font-medium text-card-foreground">{row.name}</TableCell>
+                      <TableCell className="text-right text-card-foreground">{row.periodos}</TableCell>
+                      <TableCell className="text-right text-card-foreground">{row.prendas.toLocaleString()}</TableCell>
+                      <TableCell className="text-right font-medium text-card-foreground">
+                        S/ {fmtMoney(row.importe)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Comparación Actas vs Guías */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base text-card-foreground">Resumen por Cuadrilla</CardTitle>
-            <CardDescription>Ordenes y prendas por cada cuadrilla</CardDescription>
+            <CardTitle className="text-base text-card-foreground">Comparación Actas vs Guías</CardTitle>
+            <CardDescription>Prendas recibidas (Actas) vs despachadas (Guías) por periodo</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Cuadrilla</TableHead>
-                  <TableHead>Total Ordenes</TableHead>
-                  <TableHead>Total Prendas</TableHead>
-                  <TableHead>Pendientes</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {groupReport.map((row) => (
-                  <TableRow key={row.name}>
-                    <TableCell className="font-medium text-card-foreground">{row.name}</TableCell>
-                    <TableCell className="text-card-foreground">{row.ordenes}</TableCell>
-                    <TableCell className="text-card-foreground">{row.prendas}</TableCell>
-                    <TableCell>
-                      <span className={row.pendientes > 0 ? "font-medium text-amber-600" : "text-muted-foreground"}>
-                        {row.pendientes}
-                      </span>
-                    </TableCell>
+            {actasGuiasReport.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No hay periodos de valorización registrados.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Periodo</TableHead>
+                    <TableHead>Proyecto</TableHead>
+                    <TableHead className="text-right">Actas</TableHead>
+                    <TableHead className="text-right">Guías</TableHead>
+                    <TableHead className="text-right">Diferencia</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {actasGuiasReport.map((row) => (
+                    <TableRow key={row.name}>
+                      <TableCell className="font-medium text-card-foreground">{row.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{row.project}</TableCell>
+                      <TableCell className="text-right text-card-foreground">{row.actas.toLocaleString()}</TableCell>
+                      <TableCell className="text-right text-card-foreground">{row.guias.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">
+                        <span className={
+                          row.diff === 0
+                            ? "text-muted-foreground"
+                            : row.diff > 0
+                            ? "font-medium text-emerald-600"
+                            : "font-medium text-red-600"
+                        }>
+                          {row.diff > 0 ? "+" : ""}{row.diff.toLocaleString()}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
 
-        {/* Top workers table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base text-card-foreground">Mineros con mas Ordenes</CardTitle>
-            <CardDescription>Top 10 mineros por cantidad de ordenes</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>#</TableHead>
-                  <TableHead>Minero</TableHead>
-                  <TableHead>Cuadrilla</TableHead>
-                  <TableHead>Ordenes</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {topWorkers.map((row, i) => (
-                  <TableRow key={row.name}>
-                    <TableCell className="text-muted-foreground">{i + 1}</TableCell>
-                    <TableCell className="font-medium text-card-foreground">{row.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.group}</TableCell>
-                    <TableCell className="font-medium text-card-foreground">{row.ordenes}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        </TabsContent>
+
+        {/* ── PLANILLA TAB ────────────────────────────────────────────────── */}
+        <TabsContent value="planilla" className="space-y-6 pt-2">
+
+          {/* Planilla KPI cards */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardContent className="pt-6 flex items-center gap-4">
+                <div className="rounded-full bg-primary/10 p-3">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{planillaKpis.empleadosActivos}</p>
+                  <p className="text-xs text-muted-foreground">Empleados Activos</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 flex items-center gap-4">
+                <div className="rounded-full bg-green-100 p-3">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-green-700">S/ {fmtMoney(planillaKpis.totalPagado)}</p>
+                  <p className="text-xs text-muted-foreground">Total Pagado</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 flex items-center gap-4">
+                <div className="rounded-full bg-orange-100 p-3">
+                  <Clock className="h-5 w-5 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-orange-600">S/ {fmtMoney(planillaKpis.totalPendiente)}</p>
+                  <p className="text-xs text-muted-foreground">Pendiente de Pago</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 flex items-center gap-4">
+                <div className="rounded-full bg-blue-100 p-3">
+                  <Building2 className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{planillaKpis.periodosAbiertos}</p>
+                  <p className="text-xs text-muted-foreground">Períodos Abiertos</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Neto pagado vs pendiente por período */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base text-card-foreground">Neto por Período</CardTitle>
+              <CardDescription>Monto pagado vs pendiente por cada período de planilla</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {planillaBarData.length === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">Sin datos de planilla</p>
+              ) : (
+                <ChartContainer
+                  config={{
+                    pagado: { label: "Pagado S/", color: "#16a34a" },
+                    pendiente: { label: "Pendiente S/", color: "#ea580c" },
+                  }}
+                  className="h-[280px]"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={planillaBarData} margin={{ top: 5, right: 20, left: 0, bottom: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" interval={0} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey="pagado" fill="#16a34a" radius={[4, 4, 0, 0]} stackId="a" />
+                      <Bar dataKey="pendiente" fill="#ea580c" radius={[4, 4, 0, 0]} stackId="a" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Resumen por empleado */}
+          {planillaEmpReport.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base text-card-foreground">Resumen por Empleado</CardTitle>
+                <CardDescription>Neto acumulado, pagado y pendiente en todos los períodos</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Empleado</TableHead>
+                      <TableHead>Cargo</TableHead>
+                      <TableHead className="text-right">Períodos</TableHead>
+                      <TableHead className="text-right">Total Neto</TableHead>
+                      <TableHead className="text-right">Pagado</TableHead>
+                      <TableHead className="text-right">Pendiente</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {planillaEmpReport.map((row) => (
+                      <TableRow key={row.nombre}>
+                        <TableCell className="font-medium text-card-foreground">{row.nombre}</TableCell>
+                        <TableCell className="text-muted-foreground">{row.cargo}</TableCell>
+                        <TableCell className="text-right text-card-foreground">{row.periodos}</TableCell>
+                        <TableCell className="text-right font-medium text-card-foreground">S/ {fmtMoney(row.totalNeto)}</TableCell>
+                        <TableCell className="text-right text-green-700">S/ {fmtMoney(row.totalPagado)}</TableCell>
+                        <TableCell className="text-right">
+                          {row.totalPendiente > 0
+                            ? <Badge variant="outline" className="text-orange-600 border-orange-300">S/ {fmtMoney(row.totalPendiente)}</Badge>
+                            : <span className="text-muted-foreground text-xs">Al día</span>}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
+        </TabsContent>
+      </Tabs>
       </main>
     </>
   )

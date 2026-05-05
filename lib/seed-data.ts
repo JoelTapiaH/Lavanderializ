@@ -147,4 +147,7 @@ export const seedData: StoreData = {
   projectGarmentPrices: [],
   inventoryItems: [],
   inventoryMovements: [],
+  employees: [],
+  attendanceRecords: [],
+  payrollPeriods: [],
 }

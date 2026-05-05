@@ -1,11 +1,19 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react"
-import type { StoreData, Group, Worker, GarmentType, Order, OrderItem, OrderStatus, ValorizacionPeriod, Acta, Guia, ValorizacionItem, InventoryItem, InventoryMovement, Project, ProjectGarmentPrice } from "./types"
+import type { StoreData, Group, Worker, GarmentType, Order, OrderItem, OrderStatus, ValorizacionPeriod, Acta, Guia, ValorizacionItem, InventoryItem, InventoryMovement, Project, ProjectGarmentPrice, Employee, AttendanceRecord, PayrollPeriod, PayrollRecord } from "./types"
 import { supabase } from "./supabase"
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+}
+
+
+function calcPayrollNeto(r: Omit<PayrollRecord, "id" | "periodId" | "netoAPagar">): number {
+  const totalDias = r.diasTotalesPeriodo > 0 ? r.diasTotalesPeriodo : 30
+  const bruto = (r.salarioBase / totalDias) * r.diasTrabajados + r.horasExtra * r.valorHoraExtra + r.bonificaciones
+  const descAfp = bruto * (r.descuentoAfp / 100)
+  return Math.max(0, bruto - (descAfp + r.descuentoSeguro + r.adelantos + r.otrosDescuentos))
 }
 
 const emptyData: StoreData = {
@@ -18,6 +26,9 @@ const emptyData: StoreData = {
   valorizaciones: [],
   inventoryItems: [],
   inventoryMovements: [],
+  employees: [],
+  attendanceRecords: [],
+  payrollPeriods: [],
 }
 
 async function fetchAllData(): Promise<StoreData> {
@@ -36,6 +47,10 @@ async function fetchAllData(): Promise<StoreData> {
     { data: inventoryMovementsRaw },
     { data: projectsRaw },
     { data: projectGarmentPricesRaw },
+    { data: employeesRaw },
+    { data: attendanceRaw },
+    { data: payrollPeriodsRaw },
+    { data: payrollRecordsRaw },
   ] = await Promise.all([
     supabase.from("groups").select("*").order("created_at"),
     supabase.from("workers").select("*").order("created_at"),
@@ -51,6 +66,10 @@ async function fetchAllData(): Promise<StoreData> {
     supabase.from("inventory_movements").select("*").order("created_at", { ascending: false }),
     supabase.from("projects").select("*").order("created_at"),
     supabase.from("project_garment_prices").select("*"),
+    supabase.from("employees").select("*").order("created_at"),
+    supabase.from("attendance_records").select("*").order("fecha", { ascending: false }),
+    supabase.from("payroll_periods").select("*").order("created_at", { ascending: false }),
+    supabase.from("payroll_records").select("*"),
   ])
 
   const mappedOrders: Order[] = (orders ?? []).map((o) => ({
@@ -101,6 +120,20 @@ async function fetchAllData(): Promise<StoreData> {
       })),
   }))
 
+  const mappedPayrollRecords = (payrollRecordsRaw ?? []).map((r) => ({
+    id: r.id, periodId: r.period_id, employeeId: r.employee_id,
+    salarioBase: r.salario_base,
+    fechaInicioAsistencia: r.fecha_inicio_asistencia ?? "",
+    fechaFinAsistencia: r.fecha_fin_asistencia ?? "",
+    diasTrabajados: r.dias_trabajados,
+    diasTotalesPeriodo: r.dias_totales_periodo ?? 30,
+    horasExtra: r.horas_extra, valorHoraExtra: r.valor_hora_extra,
+    bonificaciones: r.bonificaciones, descuentoAfp: r.descuento_afp,
+    descuentoSeguro: r.descuento_seguro, adelantos: r.adelantos,
+    otrosDescuentos: r.otros_descuentos, netoAPagar: r.neto_a_pagar,
+    pagado: r.pagado ?? false,
+  }))
+
   return {
     groups: (groups ?? []).map((g) => ({ id: g.id, name: g.name, description: g.description, createdAt: g.created_at })),
     workers: (workers ?? []).map((w) => ({ id: w.id, name: w.name, dni: w.dni, groupId: w.group_id, createdAt: w.created_at })),
@@ -121,6 +154,23 @@ async function fetchAllData(): Promise<StoreData> {
     })),
     projectGarmentPrices: (projectGarmentPricesRaw ?? []).map((p) => ({
       id: p.id, projectId: p.project_id, garmentTypeId: p.garment_type_id, pricePerUnit: p.price_per_unit,
+    })),
+    employees: (employeesRaw ?? []).map((e) => ({
+      id: e.id, nombre: e.nombre, cargo: e.cargo,
+      salarioBase: e.salario_base, fechaIngreso: e.fecha_ingreso ?? "",
+      estado: e.estado as "activo" | "inactivo",
+      afpPct: e.afp_pct ?? 13, descFijo: e.desc_fijo ?? 0,
+      createdAt: e.created_at,
+    })),
+    attendanceRecords: (attendanceRaw ?? []).map((a) => ({
+      id: a.id, employeeId: a.employee_id, fecha: a.fecha, createdAt: a.created_at,
+    })),
+    payrollPeriods: (payrollPeriodsRaw ?? []).map((p) => ({
+      id: p.id, nombre: p.nombre, startDate: p.start_date, endDate: p.end_date,
+      tipo: p.tipo as "quincenal" | "mensual",
+      estado: p.estado as "abierto" | "cerrado",
+      createdAt: p.created_at,
+      records: mappedPayrollRecords.filter((r) => r.periodId === p.id),
     })),
   }
 }
@@ -176,6 +226,22 @@ interface StoreContextType {
   updateInventoryItem: (id: string, code: string, name: string, unit: string, minStock: number, cost: number, notes: string) => Promise<void>
   deleteInventoryItem: (id: string) => Promise<void>
   addInventoryMovement: (itemId: string, type: "entrada" | "salida", quantity: number, notes: string) => Promise<InventoryMovement>
+  // Employees
+  addEmployee: (nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, afpPct: number, descFijo: number) => Promise<Employee>
+  updateEmployee: (id: string, nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, estado: "activo" | "inactivo", afpPct: number, descFijo: number) => Promise<void>
+  deleteEmployee: (id: string) => Promise<void>
+  // Attendance
+  addAttendanceRecord: (employeeId: string, fecha: string) => Promise<AttendanceRecord>
+  updateAttendanceRecord: (id: string, fecha: string) => Promise<void>
+  deleteAttendanceRecord: (id: string) => Promise<void>
+  // Payroll Periods
+  addPayrollPeriod: (nombre: string, startDate: string, endDate: string, tipo: "quincenal" | "mensual") => Promise<PayrollPeriod>
+  deletePayrollPeriod: (id: string) => Promise<void>
+  closePayrollPeriod: (id: string) => Promise<void>
+  // Payroll Records
+  upsertPayrollRecord: (periodId: string, record: Omit<PayrollRecord, "id" | "periodId" | "netoAPagar">) => Promise<void>
+  deletePayrollRecord: (periodId: string, recordId: string) => Promise<void>
+  markPayrollRecordPaid: (periodId: string, recordId: string, pagado: boolean) => Promise<void>
   // Reset
   resetData: () => Promise<void>
 }
@@ -537,6 +603,138 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return movement
   }, [])
 
+  // ── Employees ────────────────────────────────────────────────────────────────
+
+  const addEmployee = useCallback(async (nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, afpPct: number, descFijo: number): Promise<Employee> => {
+    const employee: Employee = { id: generateId(), nombre, cargo, salarioBase, fechaIngreso, estado: "activo", afpPct, descFijo, createdAt: new Date().toISOString() }
+    setData((prev) => ({ ...prev, employees: [...prev.employees, employee] }))
+    await supabase.from("employees").insert({ id: employee.id, nombre, cargo, salario_base: salarioBase, fecha_ingreso: fechaIngreso, estado: "activo", afp_pct: afpPct, desc_fijo: descFijo, created_at: employee.createdAt })
+    return employee
+  }, [])
+
+  const updateEmployee = useCallback(async (id: string, nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, estado: "activo" | "inactivo", afpPct: number, descFijo: number) => {
+    setData((prev) => ({ ...prev, employees: prev.employees.map((e) => e.id === id ? { ...e, nombre, cargo, salarioBase, fechaIngreso, estado, afpPct, descFijo } : e) }))
+    await supabase.from("employees").update({ nombre, cargo, salario_base: salarioBase, fecha_ingreso: fechaIngreso, estado, afp_pct: afpPct, desc_fijo: descFijo }).eq("id", id)
+  }, [])
+
+  const deleteEmployee = useCallback(async (id: string) => {
+    setData((prev) => ({ ...prev, employees: prev.employees.filter((e) => e.id !== id) }))
+    await supabase.from("employees").delete().eq("id", id)
+  }, [])
+
+  // ── Attendance ────────────────────────────────────────────────────────────────
+
+  const addAttendanceRecord = useCallback(async (employeeId: string, fecha: string): Promise<AttendanceRecord> => {
+    const record: AttendanceRecord = { id: generateId(), employeeId, fecha, createdAt: new Date().toISOString() }
+    setData((prev) => ({ ...prev, attendanceRecords: [record, ...prev.attendanceRecords] }))
+    await supabase.from("attendance_records").insert({ id: record.id, employee_id: employeeId, fecha, created_at: record.createdAt })
+    return record
+  }, [])
+
+  const updateAttendanceRecord = useCallback(async (id: string, fecha: string) => {
+    setData((prev) => ({
+      ...prev,
+      attendanceRecords: prev.attendanceRecords.map((a) => a.id === id ? { ...a, fecha } : a),
+    }))
+    await supabase.from("attendance_records").update({ fecha }).eq("id", id)
+  }, [])
+
+  const deleteAttendanceRecord = useCallback(async (id: string) => {
+    setData((prev) => ({ ...prev, attendanceRecords: prev.attendanceRecords.filter((a) => a.id !== id) }))
+    await supabase.from("attendance_records").delete().eq("id", id)
+  }, [])
+
+  // ── Payroll Periods ───────────────────────────────────────────────────────────
+
+  const addPayrollPeriod = useCallback(async (nombre: string, startDate: string, endDate: string, tipo: "quincenal" | "mensual"): Promise<PayrollPeriod> => {
+    const period: PayrollPeriod = { id: generateId(), nombre, startDate, endDate, tipo, estado: "abierto", records: [], createdAt: new Date().toISOString() }
+    setData((prev) => ({ ...prev, payrollPeriods: [period, ...prev.payrollPeriods] }))
+    await supabase.from("payroll_periods").insert({ id: period.id, nombre, start_date: startDate, end_date: endDate, tipo, estado: "abierto", created_at: period.createdAt })
+    return period
+  }, [])
+
+  const deletePayrollPeriod = useCallback(async (id: string) => {
+    setData((prev) => ({ ...prev, payrollPeriods: prev.payrollPeriods.filter((p) => p.id !== id) }))
+    await supabase.from("payroll_records").delete().eq("period_id", id)
+    await supabase.from("payroll_periods").delete().eq("id", id)
+  }, [])
+
+  const closePayrollPeriod = useCallback(async (id: string) => {
+    setData((prev) => ({ ...prev, payrollPeriods: prev.payrollPeriods.map((p) => p.id === id ? { ...p, estado: "cerrado" } : p) }))
+    await supabase.from("payroll_periods").update({ estado: "cerrado" }).eq("id", id)
+  }, [])
+
+  // ── Payroll Records ───────────────────────────────────────────────────────────
+
+  const upsertPayrollRecord = useCallback(async (periodId: string, recordData: Omit<PayrollRecord, "id" | "periodId" | "netoAPagar">) => {
+    const netoAPagar = calcPayrollNeto(recordData)
+    const existing = data.payrollPeriods.find((p) => p.id === periodId)?.records.find((r) => r.employeeId === recordData.employeeId)
+    if (existing) {
+      const updated: PayrollRecord = { ...existing, ...recordData, netoAPagar }
+      setData((prev) => ({
+        ...prev,
+        payrollPeriods: prev.payrollPeriods.map((p) =>
+          p.id === periodId ? { ...p, records: p.records.map((r) => r.id === existing.id ? updated : r) } : p
+        ),
+      }))
+      await supabase.from("payroll_records").update({
+        salario_base: recordData.salarioBase,
+        fecha_inicio_asistencia: recordData.fechaInicioAsistencia || null,
+        fecha_fin_asistencia: recordData.fechaFinAsistencia || null,
+        dias_trabajados: recordData.diasTrabajados,
+        dias_totales_periodo: recordData.diasTotalesPeriodo,
+        horas_extra: recordData.horasExtra, valor_hora_extra: recordData.valorHoraExtra,
+        bonificaciones: recordData.bonificaciones, descuento_afp: recordData.descuentoAfp,
+        descuento_seguro: recordData.descuentoSeguro, adelantos: recordData.adelantos,
+        otros_descuentos: recordData.otrosDescuentos, neto_a_pagar: netoAPagar,
+      }).eq("id", existing.id)
+    } else {
+      const id = generateId()
+      const newRecord: PayrollRecord = { id, periodId, ...recordData, netoAPagar }
+      setData((prev) => ({
+        ...prev,
+        payrollPeriods: prev.payrollPeriods.map((p) =>
+          p.id === periodId ? { ...p, records: [...p.records, newRecord] } : p
+        ),
+      }))
+      await supabase.from("payroll_records").insert({
+        id, period_id: periodId, employee_id: recordData.employeeId,
+        salario_base: recordData.salarioBase,
+        fecha_inicio_asistencia: recordData.fechaInicioAsistencia || null,
+        fecha_fin_asistencia: recordData.fechaFinAsistencia || null,
+        dias_trabajados: recordData.diasTrabajados,
+        dias_totales_periodo: recordData.diasTotalesPeriodo,
+        horas_extra: recordData.horasExtra, valor_hora_extra: recordData.valorHoraExtra,
+        bonificaciones: recordData.bonificaciones, descuento_afp: recordData.descuentoAfp,
+        descuento_seguro: recordData.descuentoSeguro, adelantos: recordData.adelantos,
+        otros_descuentos: recordData.otrosDescuentos, neto_a_pagar: netoAPagar,
+        pagado: recordData.pagado ?? false,
+      })
+    }
+  }, [data.payrollPeriods])
+
+  const deletePayrollRecord = useCallback(async (periodId: string, recordId: string) => {
+    setData((prev) => ({
+      ...prev,
+      payrollPeriods: prev.payrollPeriods.map((p) =>
+        p.id === periodId ? { ...p, records: p.records.filter((r) => r.id !== recordId) } : p
+      ),
+    }))
+    await supabase.from("payroll_records").delete().eq("id", recordId)
+  }, [])
+
+  const markPayrollRecordPaid = useCallback(async (periodId: string, recordId: string, pagado: boolean) => {
+    setData((prev) => ({
+      ...prev,
+      payrollPeriods: prev.payrollPeriods.map((p) =>
+        p.id === periodId
+          ? { ...p, records: p.records.map((r) => r.id === recordId ? { ...r, pagado } : r) }
+          : p
+      ),
+    }))
+    await supabase.from("payroll_records").update({ pagado }).eq("id", recordId)
+  }, [])
+
   // ── Reset ────────────────────────────────────────────────────────────────────
 
   const resetData = useCallback(async () => {
@@ -565,6 +763,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         addActa, updateActa, deleteActa,
         addGuia, updateGuia, deleteGuia,
         addInventoryItem, updateInventoryItem, deleteInventoryItem, addInventoryMovement,
+        addEmployee, updateEmployee, deleteEmployee,
+        addAttendanceRecord, updateAttendanceRecord, deleteAttendanceRecord,
+        addPayrollPeriod, deletePayrollPeriod, closePayrollPeriod,
+        upsertPayrollRecord, deletePayrollRecord, markPayrollRecordPaid,
         resetData,
       }}
     >
