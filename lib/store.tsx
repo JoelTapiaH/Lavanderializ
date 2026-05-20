@@ -160,6 +160,8 @@ async function fetchAllData(): Promise<StoreData> {
       salarioBase: e.salario_base, fechaIngreso: e.fecha_ingreso ?? "",
       estado: e.estado as "activo" | "inactivo",
       afpPct: e.afp_pct ?? 13, descFijo: e.desc_fijo ?? 0,
+      projectId: e.project_id ?? null,
+      bonoMartes: e.bono_martes ?? 0,
       createdAt: e.created_at,
     })),
     attendanceRecords: (attendanceRaw ?? []).map((a) => ({
@@ -227,8 +229,8 @@ interface StoreContextType {
   deleteInventoryItem: (id: string) => Promise<void>
   addInventoryMovement: (itemId: string, type: "entrada" | "salida", quantity: number, notes: string) => Promise<InventoryMovement>
   // Employees
-  addEmployee: (nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, afpPct: number, descFijo: number) => Promise<Employee>
-  updateEmployee: (id: string, nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, estado: "activo" | "inactivo", afpPct: number, descFijo: number) => Promise<void>
+  addEmployee: (nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, afpPct: number, descFijo: number, projectId: string | null, bonoMartes: number) => Promise<Employee>
+  updateEmployee: (id: string, nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, estado: "activo" | "inactivo", afpPct: number, descFijo: number, projectId: string | null, bonoMartes: number) => Promise<void>
   deleteEmployee: (id: string) => Promise<void>
   // Attendance
   addAttendanceRecord: (employeeId: string, fecha: string) => Promise<AttendanceRecord>
@@ -605,16 +607,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // ── Employees ────────────────────────────────────────────────────────────────
 
-  const addEmployee = useCallback(async (nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, afpPct: number, descFijo: number): Promise<Employee> => {
-    const employee: Employee = { id: generateId(), nombre, cargo, salarioBase, fechaIngreso, estado: "activo", afpPct, descFijo, createdAt: new Date().toISOString() }
+  const addEmployee = useCallback(async (nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, afpPct: number, descFijo: number, projectId: string | null, bonoMartes: number): Promise<Employee> => {
+    const employee: Employee = { id: generateId(), nombre, cargo, salarioBase, fechaIngreso, estado: "activo", afpPct, descFijo, projectId, bonoMartes, createdAt: new Date().toISOString() }
     setData((prev) => ({ ...prev, employees: [...prev.employees, employee] }))
-    await supabase.from("employees").insert({ id: employee.id, nombre, cargo, salario_base: salarioBase, fecha_ingreso: fechaIngreso, estado: "activo", afp_pct: afpPct, desc_fijo: descFijo, created_at: employee.createdAt })
+    await supabase.from("employees").insert({ id: employee.id, nombre, cargo, salario_base: salarioBase, fecha_ingreso: fechaIngreso, estado: "activo", afp_pct: afpPct, desc_fijo: descFijo, project_id: projectId, bono_martes: bonoMartes, created_at: employee.createdAt })
     return employee
   }, [])
 
-  const updateEmployee = useCallback(async (id: string, nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, estado: "activo" | "inactivo", afpPct: number, descFijo: number) => {
-    setData((prev) => ({ ...prev, employees: prev.employees.map((e) => e.id === id ? { ...e, nombre, cargo, salarioBase, fechaIngreso, estado, afpPct, descFijo } : e) }))
-    await supabase.from("employees").update({ nombre, cargo, salario_base: salarioBase, fecha_ingreso: fechaIngreso, estado, afp_pct: afpPct, desc_fijo: descFijo }).eq("id", id)
+  const updateEmployee = useCallback(async (id: string, nombre: string, cargo: string, salarioBase: number, fechaIngreso: string, estado: "activo" | "inactivo", afpPct: number, descFijo: number, projectId: string | null, bonoMartes: number) => {
+    setData((prev) => ({ ...prev, employees: prev.employees.map((e) => e.id === id ? { ...e, nombre, cargo, salarioBase, fechaIngreso, estado, afpPct, descFijo, projectId, bonoMartes } : e) }))
+    await supabase.from("employees").update({ nombre, cargo, salario_base: salarioBase, fecha_ingreso: fechaIngreso, estado, afp_pct: afpPct, desc_fijo: descFijo, project_id: projectId, bono_martes: bonoMartes }).eq("id", id)
   }, [])
 
   const deleteEmployee = useCallback(async (id: string) => {

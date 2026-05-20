@@ -117,6 +117,8 @@ export interface Employee {
   estado: "activo" | "inactivo"
   afpPct: number       // % AFP o ONP (ej: 13). Se aplica automáticamente en planilla
   descFijo: number     // S/ descuento fijo mensual (adelantos permanentes, otros)
+  projectId: string | null  // sucursal/proyecto al que pertenece
+  bonoMartes: number        // S/ extra por cada martes trabajado (ej: trabajadores de mina)
   createdAt: string
 }
 

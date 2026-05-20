@@ -34,6 +34,19 @@ function calcPeriodDays(startDate: string, endDate: string): number {
   return Math.max(1, diff)
 }
 
+/** Count Tuesdays (day 2) between two dates inclusive. */
+function countTuesdays(startDate: string, endDate: string): number {
+  if (!startDate || !endDate) return 0
+  let count = 0
+  const cur = new Date(startDate)
+  const end = new Date(endDate)
+  while (cur <= end) {
+    if (cur.getDay() === 2) count++
+    cur.setDate(cur.getDate() + 1)
+  }
+  return count
+}
+
 function calcNeto(
   salarioBase: number, diasTrabajados: number, diasTotalesPeriodo: number,
   horasExtra: number, valorHoraExtra: number, bonificaciones: number,
@@ -77,13 +90,19 @@ export default function PlanillaPage() {
   // ── Employee state ────────────────────────────────────────────────────────
   const [empOpen, setEmpOpen] = useState(false)
   const [editEmpId, setEditEmpId] = useState<string | null>(null)
-  const [empForm, setEmpForm] = useState({ nombre: "", cargo: "", salarioBase: "", fechaIngreso: "", afpPct: "13", descFijo: "0" })
+  const [empForm, setEmpForm] = useState({
+    nombre: "", cargo: "", salarioBase: "", fechaIngreso: "",
+    afpPct: "13", descFijo: "0", projectId: "", bonoMartes: "0",
+  })
   const [empEstado, setEmpEstado] = useState<"activo" | "inactivo">("activo")
   const [deleteEmpId, setDeleteEmpId] = useState<string | null>(null)
 
+  // ── Project filter in period detail ───────────────────────────────────────
+  const [filterProjectId, setFilterProjectId] = useState<string>("todos")
+
   function openNewEmp() {
     setEditEmpId(null)
-    setEmpForm({ nombre: "", cargo: "", salarioBase: "", fechaIngreso: "", afpPct: "13", descFijo: "0" })
+    setEmpForm({ nombre: "", cargo: "", salarioBase: "", fechaIngreso: "", afpPct: "13", descFijo: "0", projectId: "", bonoMartes: "0" })
     setEmpEstado("activo")
     setEmpOpen(true)
   }
@@ -93,6 +112,8 @@ export default function PlanillaPage() {
       nombre: emp.nombre, cargo: emp.cargo,
       salarioBase: emp.salarioBase.toString(), fechaIngreso: emp.fechaIngreso,
       afpPct: emp.afpPct.toString(), descFijo: emp.descFijo.toString(),
+      projectId: emp.projectId ?? "",
+      bonoMartes: emp.bonoMartes.toString(),
     })
     setEmpEstado(emp.estado)
     setEmpOpen(true)
@@ -102,11 +123,13 @@ export default function PlanillaPage() {
     const salario = parseFloat(empForm.salarioBase) || 0
     const afpPct = parseFloat(empForm.afpPct) || 0
     const descFijo = parseFloat(empForm.descFijo) || 0
+    const bonoMartes = parseFloat(empForm.bonoMartes) || 0
+    const projectId = empForm.projectId || null
     if (editEmpId) {
-      await updateEmployee(editEmpId, empForm.nombre.trim(), empForm.cargo.trim(), salario, empForm.fechaIngreso, empEstado, afpPct, descFijo)
+      await updateEmployee(editEmpId, empForm.nombre.trim(), empForm.cargo.trim(), salario, empForm.fechaIngreso, empEstado, afpPct, descFijo, projectId, bonoMartes)
       toast.success("Empleado actualizado")
     } else {
-      await addEmployee(empForm.nombre.trim(), empForm.cargo.trim(), salario, empForm.fechaIngreso, afpPct, descFijo)
+      await addEmployee(empForm.nombre.trim(), empForm.cargo.trim(), salario, empForm.fechaIngreso, afpPct, descFijo, projectId, bonoMartes)
       toast.success("Empleado agregado")
     }
     setEmpOpen(false)
@@ -137,17 +160,27 @@ export default function PlanillaPage() {
   })
   const [deleteRecordEmpId, setDeleteRecordEmpId] = useState<string | null>(null)
 
+  // Tuesdays preview for the record dialog
+  const recordEmp = data.employees.find((e) => e.id === recordEmpId)
+  const martesBono = recordEmp && recordEmp.bonoMartes > 0
+    ? countTuesdays(recordForm.fechaInicioAsistencia, recordForm.fechaFinAsistencia) * recordEmp.bonoMartes
+    : 0
+
   function openRecord(emp: Employee) {
     if (!selectedPeriod) return
     const existing = selectedPeriod.records.find((r) => r.employeeId === emp.id)
     setRecordEmpId(emp.id)
+    // Pre-fill bonificaciones with Tuesday bonus when no existing record
+    const defaultBono = !existing && emp.bonoMartes > 0
+      ? (countTuesdays(selectedPeriod.startDate, selectedPeriod.endDate) * emp.bonoMartes).toString()
+      : (existing?.bonificaciones ?? 0).toString()
     setRecordForm({
       salarioBase: (existing?.salarioBase ?? emp.salarioBase).toString(),
       fechaInicioAsistencia: existing?.fechaInicioAsistencia || selectedPeriod.startDate,
       fechaFinAsistencia: existing?.fechaFinAsistencia || selectedPeriod.endDate,
       horasExtra: (existing?.horasExtra ?? 0).toString(),
       valorHoraExtra: (existing?.valorHoraExtra ?? 0).toString(),
-      bonificaciones: (existing?.bonificaciones ?? 0).toString(),
+      bonificaciones: defaultBono,
       afpPct: (existing?.descuentoAfp ?? emp.afpPct).toString(),
       descFijo: (existing?.descuentoSeguro ?? emp.descFijo).toString(),
       adelantos: (existing?.adelantos ?? 0).toString(),
@@ -193,9 +226,13 @@ export default function PlanillaPage() {
     setGenerating(true)
     try {
       const periodDays = calcPeriodDays(selectedPeriod.startDate, selectedPeriod.endDate)
+      const visibleEmps = filteredActiveEmployees
       let count = 0
-      for (const emp of activeEmployees) {
+      for (const emp of visibleEmps) {
         const existing = selectedPeriod.records.find((r) => r.employeeId === emp.id)
+        const defaultBono = !existing && emp.bonoMartes > 0
+          ? countTuesdays(selectedPeriod.startDate, selectedPeriod.endDate) * emp.bonoMartes
+          : (existing?.bonificaciones ?? 0)
         await upsertPayrollRecord(selectedPeriod.id, {
           employeeId: emp.id,
           salarioBase: emp.salarioBase,
@@ -205,7 +242,7 @@ export default function PlanillaPage() {
           diasTotalesPeriodo: periodDays,
           horasExtra: existing?.horasExtra ?? 0,
           valorHoraExtra: existing?.valorHoraExtra ?? 0,
-          bonificaciones: existing?.bonificaciones ?? 0,
+          bonificaciones: defaultBono,
           descuentoAfp: emp.afpPct,
           descuentoSeguro: emp.descFijo,
           adelantos: existing?.adelantos ?? 0,
@@ -219,6 +256,12 @@ export default function PlanillaPage() {
       setGenerating(false)
     }
   }
+
+  // ── Filtered employees for period detail ──────────────────────────────────
+  const filteredActiveEmployees = useMemo(() => {
+    if (!selectedPeriod || filterProjectId === "todos") return activeEmployees
+    return activeEmployees.filter((e) => e.projectId === filterProjectId)
+  }, [activeEmployees, filterProjectId, selectedPeriod])
 
   // ── Computed preview ──────────────────────────────────────────────────────
   const previewDiasTrabajados = calcPeriodDays(recordForm.fechaInicioAsistencia, recordForm.fechaFinAsistencia)
@@ -254,11 +297,11 @@ export default function PlanillaPage() {
 
   // ── PERIOD DETAIL VIEW ────────────────────────────────────────────────────
   if (selectedPeriod) {
-    const totalBeneficios = activeEmployees.reduce((sum, emp) => {
+    const totalBeneficios = filteredActiveEmployees.reduce((sum, emp) => {
       const rec = selectedPeriod.records.find((r) => r.employeeId === emp.id)
       return sum + calcBeneficios(rec?.salarioBase ?? emp.salarioBase).total
     }, 0)
-    const benefTotals = activeEmployees.reduce((acc, emp) => {
+    const benefTotals = filteredActiveEmployees.reduce((acc, emp) => {
       const rec = selectedPeriod.records.find((r) => r.employeeId === emp.id)
       const b = calcBeneficios(rec?.salarioBase ?? emp.salarioBase)
       return { essalud: acc.essalud + b.essalud, cts: acc.cts + b.cts, gratificacion: acc.gratificacion + b.gratificacion, vacaciones: acc.vacaciones + b.vacaciones, total: acc.total + b.total }
@@ -289,7 +332,7 @@ export default function PlanillaPage() {
               <>
                 <Button variant="outline" disabled={generating} onClick={generateAllRecords}>
                   <RefreshCw className={`h-4 w-4 mr-2 ${generating ? "animate-spin" : ""}`} />
-                  Auto-completar Período
+                  Auto-completar{filterProjectId !== "todos" ? " Filtro" : " Período"}
                 </Button>
                 <Button variant="outline" onClick={() => setClosePeriodConfirm(true)}>
                   <Lock className="h-4 w-4 mr-2" />
@@ -299,6 +342,24 @@ export default function PlanillaPage() {
             )}
           </div>
         </div>
+
+        {/* Filtro por proyecto/sucursal */}
+        {data.projects.length > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">Filtrar por sucursal:</span>
+            <Select value={filterProjectId} onValueChange={setFilterProjectId}>
+              <SelectTrigger className="w-52">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos los locales</SelectItem>
+                {data.projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -336,6 +397,7 @@ export default function PlanillaPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Empleado</TableHead>
+                  <TableHead>Sucursal</TableHead>
                   <TableHead className="text-right">Días Asist.</TableHead>
                   <TableHead className="text-right">Sal. Base</TableHead>
                   <TableHead className="text-right">Bruto</TableHead>
@@ -348,12 +410,19 @@ export default function PlanillaPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {activeEmployees.map((emp) => {
+                {filteredActiveEmployees.map((emp) => {
                   const rec = selectedPeriod.records.find((r) => r.employeeId === emp.id)
                   const calc = rec ? calcNeto(rec.salarioBase, rec.diasTrabajados, rec.diasTotalesPeriodo || periodDaysTotal, rec.horasExtra, rec.valorHoraExtra, rec.bonificaciones, rec.descuentoAfp, rec.descuentoSeguro, rec.adelantos, rec.otrosDescuentos) : null
+                  const proyecto = emp.projectId ? data.projects.find((p) => p.id === emp.projectId) : null
                   return (
                     <TableRow key={emp.id} className={rec?.pagado ? "opacity-60" : ""}>
-                      <TableCell className="font-medium">{emp.nombre}</TableCell>
+                      <TableCell className="font-medium">
+                        {emp.nombre}
+                        {emp.bonoMartes > 0 && <Badge variant="outline" className="ml-2 text-xs">Mina</Badge>}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {proyecto?.name ?? <span className="text-xs">—</span>}
+                      </TableCell>
                       <TableCell className="text-right">
                         {rec?.fechaInicioAsistencia && rec?.fechaFinAsistencia ? (
                           <span className="font-medium text-xs">
@@ -399,8 +468,8 @@ export default function PlanillaPage() {
                     </TableRow>
                   )
                 })}
-                {activeEmployees.length === 0 && (
-                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No hay empleados activos</TableCell></TableRow>
+                {filteredActiveEmployees.length === 0 && (
+                  <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No hay empleados activos{filterProjectId !== "todos" ? " en esta sucursal" : ""}</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -426,7 +495,7 @@ export default function PlanillaPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {activeEmployees.map((emp) => {
+                {filteredActiveEmployees.map((emp) => {
                   const rec = selectedPeriod.records.find((r) => r.employeeId === emp.id)
                   const b = calcBeneficios(rec?.salarioBase ?? emp.salarioBase)
                   return (
@@ -440,7 +509,7 @@ export default function PlanillaPage() {
                     </TableRow>
                   )
                 })}
-                {activeEmployees.length > 0 && (
+                {filteredActiveEmployees.length > 0 && (
                   <TableRow className="border-t-2 font-bold bg-muted/40">
                     <TableCell>TOTAL</TableCell>
                     <TableCell className="text-right">{fmt(benefTotals.essalud)}</TableCell>
@@ -523,7 +592,15 @@ export default function PlanillaPage() {
                 <div className="space-y-1"><Label>Salario Base (S/)</Label><Input type="number" value={recordForm.salarioBase} onChange={(e) => setRecordForm((f) => ({ ...f, salarioBase: e.target.value }))} /></div>
                 <div className="space-y-1"><Label>Horas Extra</Label><Input type="number" value={recordForm.horasExtra} onChange={(e) => setRecordForm((f) => ({ ...f, horasExtra: e.target.value }))} /></div>
                 <div className="space-y-1"><Label>Valor Hora Extra (S/)</Label><Input type="number" value={recordForm.valorHoraExtra} onChange={(e) => setRecordForm((f) => ({ ...f, valorHoraExtra: e.target.value }))} /></div>
-                <div className="space-y-1"><Label>Bonificaciones (S/)</Label><Input type="number" value={recordForm.bonificaciones} onChange={(e) => setRecordForm((f) => ({ ...f, bonificaciones: e.target.value }))} /></div>
+                <div className="space-y-1">
+                  <Label>Bonificaciones (S/)</Label>
+                  <Input type="number" value={recordForm.bonificaciones} onChange={(e) => setRecordForm((f) => ({ ...f, bonificaciones: e.target.value }))} />
+                  {recordEmp && recordEmp.bonoMartes > 0 && recordForm.fechaInicioAsistencia && recordForm.fechaFinAsistencia && (
+                    <p className="text-xs text-muted-foreground">
+                      Bono mina: {countTuesdays(recordForm.fechaInicioAsistencia, recordForm.fechaFinAsistencia)} martes × {fmt(recordEmp.bonoMartes)} = <span className="font-semibold text-foreground">{fmt(martesBono)}</span>
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="rounded-lg border p-3 space-y-2">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Descuentos</p>
@@ -590,36 +667,47 @@ export default function PlanillaPage() {
                   <TableRow>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Cargo</TableHead>
+                    <TableHead>Sucursal</TableHead>
                     <TableHead className="text-right">Sal. Base</TableHead>
                     <TableHead className="text-right">AFP/ONP</TableHead>
                     <TableHead className="text-right">Desc. Fijo</TableHead>
+                    <TableHead className="text-right">Bono Mina</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.employees.map((emp) => (
-                    <TableRow key={emp.id}>
-                      <TableCell className="font-medium">{emp.nombre}</TableCell>
-                      <TableCell className="text-muted-foreground">{emp.cargo || "—"}</TableCell>
-                      <TableCell className="text-right">{fmt(emp.salarioBase)}</TableCell>
-                      <TableCell className="text-right text-red-600">{emp.afpPct}%</TableCell>
-                      <TableCell className="text-right text-red-600">{fmt(emp.descFijo)}</TableCell>
-                      <TableCell>
-                        <Badge variant={emp.estado === "activo" ? "default" : "secondary"}>
-                          {emp.estado === "activo" ? "Activo" : "Inactivo"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button size="icon" variant="ghost" onClick={() => openEditEmp(emp)}><Pencil className="h-4 w-4" /></Button>
-                          <Button size="icon" variant="ghost" className="text-red-500" onClick={() => setDeleteEmpId(emp.id)}><Trash2 className="h-4 w-4" /></Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {data.employees.map((emp) => {
+                    const proyecto = emp.projectId ? data.projects.find((p) => p.id === emp.projectId) : null
+                    return (
+                      <TableRow key={emp.id}>
+                        <TableCell className="font-medium">{emp.nombre}</TableCell>
+                        <TableCell className="text-muted-foreground">{emp.cargo || "—"}</TableCell>
+                        <TableCell className="text-muted-foreground">{proyecto?.name ?? "—"}</TableCell>
+                        <TableCell className="text-right">{fmt(emp.salarioBase)}</TableCell>
+                        <TableCell className="text-right text-red-600">{emp.afpPct}%</TableCell>
+                        <TableCell className="text-right text-red-600">{fmt(emp.descFijo)}</TableCell>
+                        <TableCell className="text-right">
+                          {emp.bonoMartes > 0
+                            ? <span className="text-blue-600 font-medium">{fmt(emp.bonoMartes)}/martes</span>
+                            : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={emp.estado === "activo" ? "default" : "secondary"}>
+                            {emp.estado === "activo" ? "Activo" : "Inactivo"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button size="icon" variant="ghost" onClick={() => openEditEmp(emp)}><Pencil className="h-4 w-4" /></Button>
+                            <Button size="icon" variant="ghost" className="text-red-500" onClick={() => setDeleteEmpId(emp.id)}><Trash2 className="h-4 w-4" /></Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                   {data.employees.length === 0 && (
-                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No hay empleados registrados</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No hay empleados registrados</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -689,6 +777,22 @@ export default function PlanillaPage() {
               <div className="space-y-1"><Label>Salario Base (S/)</Label><Input type="number" value={empForm.salarioBase} onChange={(e) => setEmpForm((f) => ({ ...f, salarioBase: e.target.value }))} /></div>
               <div className="space-y-1"><Label>Fecha de Ingreso</Label><Input type="date" value={empForm.fechaIngreso} onChange={(e) => setEmpForm((f) => ({ ...f, fechaIngreso: e.target.value }))} /></div>
             </div>
+            {/* Sucursal / Proyecto */}
+            <div className="space-y-1">
+              <Label>Sucursal / Local</Label>
+              <Select value={empForm.projectId || "ninguno"} onValueChange={(v) => setEmpForm((f) => ({ ...f, projectId: v === "ninguno" ? "" : v }))}>
+                <SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ninguno">Sin asignar</SelectItem>
+                  {data.projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {data.projects.length === 0 && (
+                <p className="text-xs text-muted-foreground">Crea proyectos/locales en la sección Proyectos.</p>
+              )}
+            </div>
             {/* Descuentos por ley */}
             <div className="rounded-lg border p-3 space-y-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Descuentos por Ley</p>
@@ -703,6 +807,15 @@ export default function PlanillaPage() {
                   <Input type="number" value={empForm.descFijo} onChange={(e) => setEmpForm((f) => ({ ...f, descFijo: e.target.value }))} placeholder="0" />
                   <p className="text-xs text-muted-foreground">Adelantos fijos u otros</p>
                 </div>
+              </div>
+            </div>
+            {/* Bono mina */}
+            <div className="rounded-lg border p-3 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Bono Especial</p>
+              <div className="space-y-1">
+                <Label>Bono por martes trabajado (S/)</Label>
+                <Input type="number" value={empForm.bonoMartes} onChange={(e) => setEmpForm((f) => ({ ...f, bonoMartes: e.target.value }))} placeholder="0" />
+                <p className="text-xs text-muted-foreground">Para trabajadores de mina. Se calcula automáticamente al generar la planilla.</p>
               </div>
             </div>
             {editEmpId && (
