@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -92,7 +92,7 @@ export default function PlanillaPage() {
   const [editEmpId, setEditEmpId] = useState<string | null>(null)
   const [empForm, setEmpForm] = useState({
     nombre: "", cargo: "", salarioBase: "", fechaIngreso: "",
-    afpPct: "13", descFijo: "0", projectId: "", bonoMartes: "0",
+    projectId: "", bonoMartes: "0",
   })
   const [empEstado, setEmpEstado] = useState<"activo" | "inactivo">("activo")
   const [deleteEmpId, setDeleteEmpId] = useState<string | null>(null)
@@ -102,7 +102,7 @@ export default function PlanillaPage() {
 
   function openNewEmp() {
     setEditEmpId(null)
-    setEmpForm({ nombre: "", cargo: "", salarioBase: "", fechaIngreso: "", afpPct: "13", descFijo: "0", projectId: "", bonoMartes: "0" })
+    setEmpForm({ nombre: "", cargo: "", salarioBase: "", fechaIngreso: "", projectId: "", bonoMartes: "0" })
     setEmpEstado("activo")
     setEmpOpen(true)
   }
@@ -111,7 +111,6 @@ export default function PlanillaPage() {
     setEmpForm({
       nombre: emp.nombre, cargo: emp.cargo,
       salarioBase: emp.salarioBase.toString(), fechaIngreso: emp.fechaIngreso,
-      afpPct: emp.afpPct.toString(), descFijo: emp.descFijo.toString(),
       projectId: emp.projectId ?? "",
       bonoMartes: emp.bonoMartes.toString(),
     })
@@ -121,15 +120,13 @@ export default function PlanillaPage() {
   async function saveEmp() {
     if (!empForm.nombre.trim()) { toast.error("Nombre requerido"); return }
     const salario = parseFloat(empForm.salarioBase) || 0
-    const afpPct = parseFloat(empForm.afpPct) || 0
-    const descFijo = parseFloat(empForm.descFijo) || 0
     const bonoMartes = parseFloat(empForm.bonoMartes) || 0
     const projectId = empForm.projectId || null
     if (editEmpId) {
-      await updateEmployee(editEmpId, empForm.nombre.trim(), empForm.cargo.trim(), salario, empForm.fechaIngreso, empEstado, afpPct, descFijo, projectId, bonoMartes)
+      await updateEmployee(editEmpId, empForm.nombre.trim(), empForm.cargo.trim(), salario, empForm.fechaIngreso, empEstado, 0, 0, projectId, bonoMartes)
       toast.success("Empleado actualizado")
     } else {
-      await addEmployee(empForm.nombre.trim(), empForm.cargo.trim(), salario, empForm.fechaIngreso, afpPct, descFijo, projectId, bonoMartes)
+      await addEmployee(empForm.nombre.trim(), empForm.cargo.trim(), salario, empForm.fechaIngreso, 0, 0, projectId, bonoMartes)
       toast.success("Empleado agregado")
     }
     setEmpOpen(false)
@@ -144,9 +141,37 @@ export default function PlanillaPage() {
 
   async function savePeriod() {
     if (!periodForm.nombre.trim()) { toast.error("Nombre requerido"); return }
-    await addPayrollPeriod(periodForm.nombre.trim(), periodForm.startDate, periodForm.endDate, periodForm.tipo)
-    toast.success("Período creado")
+    const period = await addPayrollPeriod(periodForm.nombre.trim(), periodForm.startDate, periodForm.endDate, periodForm.tipo)
     setPeriodOpen(false)
+
+    // Auto-generar registros para todos los empleados activos
+    if (activeEmployees.length > 0 && periodForm.startDate && periodForm.endDate) {
+      const periodDays = calcPeriodDays(periodForm.startDate, periodForm.endDate)
+      for (const emp of activeEmployees) {
+        const bonoMartes = emp.bonoMartes > 0
+          ? countTuesdays(periodForm.startDate, periodForm.endDate) * emp.bonoMartes
+          : 0
+        await upsertPayrollRecord(period.id, {
+          employeeId: emp.id,
+          salarioBase: emp.salarioBase,
+          fechaInicioAsistencia: periodForm.startDate,
+          fechaFinAsistencia: periodForm.endDate,
+          diasTrabajados: periodDays,
+          diasTotalesPeriodo: periodDays,
+          horasExtra: 0,
+          valorHoraExtra: 0,
+          bonificaciones: bonoMartes,
+          descuentoAfp: 0,
+          descuentoSeguro: 0,
+          adelantos: 0,
+          otrosDescuentos: 0,
+          pagado: false,
+        })
+      }
+      toast.success(`Período creado con ${activeEmployees.length} empleado${activeEmployees.length !== 1 ? "s" : ""}`)
+    } else {
+      toast.success("Período creado")
+    }
   }
 
   // ── Record state ──────────────────────────────────────────────────────────
@@ -154,16 +179,16 @@ export default function PlanillaPage() {
   const [recordEmpId, setRecordEmpId] = useState<string | null>(null)
   const [recordForm, setRecordForm] = useState({
     salarioBase: "0",
-    fechaInicioAsistencia: "", fechaFinAsistencia: "",
+    diasFaltados: "0",
     horasExtra: "0", valorHoraExtra: "0",
-    bonificaciones: "0", afpPct: "13", descFijo: "0", adelantos: "0", otrosDescuentos: "0",
+    bonificaciones: "0", adelantos: "0", otrosDescuentos: "0",
   })
   const [deleteRecordEmpId, setDeleteRecordEmpId] = useState<string | null>(null)
 
-  // Tuesdays preview for the record dialog
+  // Tuesdays preview for the record dialog (uses period dates, not record dates)
   const recordEmp = data.employees.find((e) => e.id === recordEmpId)
-  const martesBono = recordEmp && recordEmp.bonoMartes > 0
-    ? countTuesdays(recordForm.fechaInicioAsistencia, recordForm.fechaFinAsistencia) * recordEmp.bonoMartes
+  const martesBono = recordEmp && recordEmp.bonoMartes > 0 && selectedPeriod
+    ? countTuesdays(selectedPeriod.startDate, selectedPeriod.endDate) * recordEmp.bonoMartes
     : 0
 
   function openRecord(emp: Employee) {
@@ -174,15 +199,14 @@ export default function PlanillaPage() {
     const defaultBono = !existing && emp.bonoMartes > 0
       ? (countTuesdays(selectedPeriod.startDate, selectedPeriod.endDate) * emp.bonoMartes).toString()
       : (existing?.bonificaciones ?? 0).toString()
+    const periodDays = calcPeriodDays(selectedPeriod.startDate, selectedPeriod.endDate)
+    const diasFaltados = existing ? Math.max(0, periodDays - existing.diasTrabajados) : 0
     setRecordForm({
       salarioBase: (existing?.salarioBase ?? emp.salarioBase).toString(),
-      fechaInicioAsistencia: existing?.fechaInicioAsistencia || selectedPeriod.startDate,
-      fechaFinAsistencia: existing?.fechaFinAsistencia || selectedPeriod.endDate,
+      diasFaltados: diasFaltados.toString(),
       horasExtra: (existing?.horasExtra ?? 0).toString(),
       valorHoraExtra: (existing?.valorHoraExtra ?? 0).toString(),
       bonificaciones: defaultBono,
-      afpPct: (existing?.descuentoAfp ?? emp.afpPct).toString(),
-      descFijo: (existing?.descuentoSeguro ?? emp.descFijo).toString(),
       adelantos: (existing?.adelantos ?? 0).toString(),
       otrosDescuentos: (existing?.otrosDescuentos ?? 0).toString(),
     })
@@ -190,24 +214,22 @@ export default function PlanillaPage() {
   }
   async function saveRecord() {
     if (!selectedPeriod || !recordEmpId) return
-    if (!recordForm.fechaInicioAsistencia || !recordForm.fechaFinAsistencia) {
-      toast.error("Ingresa las fechas de asistencia"); return
-    }
     const existing = selectedPeriod.records.find((r) => r.employeeId === recordEmpId)
     const periodDays = calcPeriodDays(selectedPeriod.startDate, selectedPeriod.endDate)
-    const diasTrabajados = calcPeriodDays(recordForm.fechaInicioAsistencia, recordForm.fechaFinAsistencia)
+    const diasFaltados = Math.max(0, parseInt(recordForm.diasFaltados) || 0)
+    const diasTrabajados = Math.max(0, periodDays - diasFaltados)
     await upsertPayrollRecord(selectedPeriod.id, {
       employeeId: recordEmpId,
       salarioBase: parseFloat(recordForm.salarioBase) || 0,
-      fechaInicioAsistencia: recordForm.fechaInicioAsistencia,
-      fechaFinAsistencia: recordForm.fechaFinAsistencia,
+      fechaInicioAsistencia: selectedPeriod.startDate,
+      fechaFinAsistencia: selectedPeriod.endDate,
       diasTrabajados,
       diasTotalesPeriodo: periodDays,
       horasExtra: parseFloat(recordForm.horasExtra) || 0,
       valorHoraExtra: parseFloat(recordForm.valorHoraExtra) || 0,
       bonificaciones: parseFloat(recordForm.bonificaciones) || 0,
-      descuentoAfp: parseFloat(recordForm.afpPct) || 0,
-      descuentoSeguro: parseFloat(recordForm.descFijo) || 0,
+      descuentoAfp: 0,
+      descuentoSeguro: 0,
       adelantos: parseFloat(recordForm.adelantos) || 0,
       otrosDescuentos: parseFloat(recordForm.otrosDescuentos) || 0,
       pagado: existing?.pagado ?? false,
@@ -236,15 +258,15 @@ export default function PlanillaPage() {
         await upsertPayrollRecord(selectedPeriod.id, {
           employeeId: emp.id,
           salarioBase: emp.salarioBase,
-          fechaInicioAsistencia: existing?.fechaInicioAsistencia || selectedPeriod.startDate,
-          fechaFinAsistencia: existing?.fechaFinAsistencia || selectedPeriod.endDate,
+          fechaInicioAsistencia: selectedPeriod.startDate,
+          fechaFinAsistencia: selectedPeriod.endDate,
           diasTrabajados: existing?.diasTrabajados ?? periodDays,
           diasTotalesPeriodo: periodDays,
           horasExtra: existing?.horasExtra ?? 0,
           valorHoraExtra: existing?.valorHoraExtra ?? 0,
           bonificaciones: defaultBono,
-          descuentoAfp: emp.afpPct,
-          descuentoSeguro: emp.descFijo,
+          descuentoAfp: 0,
+          descuentoSeguro: 0,
           adelantos: existing?.adelantos ?? 0,
           otrosDescuentos: existing?.otrosDescuentos ?? 0,
           pagado: existing?.pagado ?? false,
@@ -264,10 +286,10 @@ export default function PlanillaPage() {
   }, [activeEmployees, filterProjectId, selectedPeriod])
 
   // ── Computed preview ──────────────────────────────────────────────────────
-  const previewDiasTrabajados = calcPeriodDays(recordForm.fechaInicioAsistencia, recordForm.fechaFinAsistencia)
   const previewDiasTotales = selectedPeriod
     ? calcPeriodDays(selectedPeriod.startDate, selectedPeriod.endDate)
     : 30
+  const previewDiasTrabajados = Math.max(0, previewDiasTotales - (parseInt(recordForm.diasFaltados) || 0))
   const preview = calcNeto(
     parseFloat(recordForm.salarioBase) || 0,
     previewDiasTrabajados,
@@ -275,8 +297,8 @@ export default function PlanillaPage() {
     parseFloat(recordForm.horasExtra) || 0,
     parseFloat(recordForm.valorHoraExtra) || 0,
     parseFloat(recordForm.bonificaciones) || 0,
-    parseFloat(recordForm.afpPct) || 0,
-    parseFloat(recordForm.descFijo) || 0,
+    0,
+    0,
     parseFloat(recordForm.adelantos) || 0,
     parseFloat(recordForm.otrosDescuentos) || 0,
   )
@@ -361,168 +383,157 @@ export default function PlanillaPage() {
           </div>
         )}
 
-        {/* KPIs */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total Bruto</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">{fmt(periodTotals.bruto)}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total Descuentos</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold text-red-600">{fmt(periodTotals.desc)}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Neto a Pagar</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold text-green-600">{fmt(periodTotals.neto)}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Ya Pagado</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold text-green-700">{fmt(periodTotals.pagados)}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Pendiente</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold text-orange-600">{fmt(periodTotals.pendiente)}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Costo Empleador</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold text-blue-600">{fmt(periodTotals.bruto + totalBeneficios)}</p></CardContent>
-          </Card>
+        {/* KPIs — compactos */}
+        <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
+          {[
+            { label: "Total Bruto", value: fmt(periodTotals.bruto), color: "" },
+            { label: "Descuentos", value: fmt(periodTotals.desc), color: "text-red-600" },
+            { label: "Neto a Pagar", value: fmt(periodTotals.neto), color: "text-green-600" },
+            { label: "Ya Pagado", value: fmt(periodTotals.pagados), color: "text-green-700" },
+            { label: "Pendiente", value: fmt(periodTotals.pendiente), color: "text-orange-600" },
+            { label: "Costo Empleador", value: fmt(periodTotals.bruto + totalBeneficios), color: "text-blue-600" },
+          ].map((k) => (
+            <div key={k.label} className="rounded-lg border bg-card px-3 py-2">
+              <p className="text-[11px] text-muted-foreground leading-tight">{k.label}</p>
+              <p className={`text-sm font-bold mt-0.5 ${k.color}`}>{k.value}</p>
+            </div>
+          ))}
         </div>
 
-        {/* Registros de pago */}
-        <Card>
-          <CardHeader><CardTitle className="text-base">Registros de Pago</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Empleado</TableHead>
-                  <TableHead>Sucursal</TableHead>
-                  <TableHead className="text-right">Días Asist.</TableHead>
-                  <TableHead className="text-right">Sal. Base</TableHead>
-                  <TableHead className="text-right">Bruto</TableHead>
-                  <TableHead className="text-right">AFP/ONP</TableHead>
-                  <TableHead className="text-right">Desc. Fijo</TableHead>
-                  <TableHead className="text-right">Otros</TableHead>
-                  <TableHead className="text-right">Neto</TableHead>
-                  <TableHead className="text-center">Pagado</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredActiveEmployees.map((emp) => {
-                  const rec = selectedPeriod.records.find((r) => r.employeeId === emp.id)
-                  const calc = rec ? calcNeto(rec.salarioBase, rec.diasTrabajados, rec.diasTotalesPeriodo || periodDaysTotal, rec.horasExtra, rec.valorHoraExtra, rec.bonificaciones, rec.descuentoAfp, rec.descuentoSeguro, rec.adelantos, rec.otrosDescuentos) : null
-                  const proyecto = emp.projectId ? data.projects.find((p) => p.id === emp.projectId) : null
-                  return (
-                    <TableRow key={emp.id} className={rec?.pagado ? "opacity-60" : ""}>
-                      <TableCell className="font-medium">
-                        {emp.nombre}
-                        {emp.bonoMartes > 0 && <Badge variant="outline" className="ml-2 text-xs">Mina</Badge>}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {proyecto?.name ?? <span className="text-xs">—</span>}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {rec?.fechaInicioAsistencia && rec?.fechaFinAsistencia ? (
-                          <span className="font-medium text-xs">
-                            {rec.fechaInicioAsistencia} → {rec.fechaFinAsistencia}
-                            <span className="ml-1 text-muted-foreground">({rec.diasTrabajados}/{periodDaysTotal}d)</span>
-                          </span>
-                        ) : <span className="text-muted-foreground">—</span>}
-                      </TableCell>
-                      <TableCell className="text-right">{fmt(rec?.salarioBase ?? emp.salarioBase)}</TableCell>
-                      <TableCell className="text-right">{calc ? fmt(calc.bruto) : "—"}</TableCell>
-                      <TableCell className="text-right text-red-600">
-                        {rec ? `${rec.descuentoAfp}%` : `${emp.afpPct}%`}
-                      </TableCell>
-                      <TableCell className="text-right text-red-600">
-                        {rec ? fmt(rec.descuentoSeguro) : fmt(emp.descFijo)}
-                      </TableCell>
-                      <TableCell className="text-right text-red-600">
-                        {rec ? fmt(rec.adelantos + rec.otrosDescuentos) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-green-600">{calc ? fmt(calc.neto) : "—"}</TableCell>
-                      <TableCell className="text-center">
-                        {rec ? (
-                          <Button
-                            size="icon" variant="ghost"
-                            className={rec.pagado ? "text-green-600" : "text-muted-foreground"}
-                            title={rec.pagado ? "Pagado — clic para marcar pendiente" : "Pendiente — clic para marcar pagado"}
-                            onClick={() => markPayrollRecordPaid(selectedPeriod.id, rec.id, !rec.pagado)}
-                          >
-                            {rec.pagado
-                              ? <CheckCircle2 className="h-5 w-5" />
-                              : <Circle className="h-5 w-5" />}
-                          </Button>
-                        ) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {selectedPeriod.estado === "abierto" && (
-                          <div className="flex justify-end gap-1">
-                            <Button size="icon" variant="ghost" onClick={() => openRecord(emp)}><Pencil className="h-4 w-4" /></Button>
-                            {rec && <Button size="icon" variant="ghost" className="text-red-500" onClick={() => setDeleteRecordEmpId(emp.id)}><Trash2 className="h-4 w-4" /></Button>}
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-                {filteredActiveEmployees.length === 0 && (
-                  <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No hay empleados activos{filterProjectId !== "todos" ? " en esta sucursal" : ""}</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        {/* Tabs: Registros / Beneficios Sociales */}
+        <Tabs defaultValue="registros">
+          <TabsList>
+            <TabsTrigger value="registros">Registros de Pago</TabsTrigger>
+            <TabsTrigger value="beneficios">Beneficios Sociales</TabsTrigger>
+          </TabsList>
 
-        {/* Beneficios Sociales */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Beneficios Sociales — Costo del Empleador</CardTitle>
-            <p className="text-xs text-muted-foreground">Provisiones mensuales estimadas. No se descuentan del neto del trabajador.</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Empleado</TableHead>
-                  <TableHead className="text-right">ESSALUD (9%)</TableHead>
-                  <TableHead className="text-right">CTS</TableHead>
-                  <TableHead className="text-right">Gratificación</TableHead>
-                  <TableHead className="text-right">Vacaciones</TableHead>
-                  <TableHead className="text-right">Total Provisión</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredActiveEmployees.map((emp) => {
-                  const rec = selectedPeriod.records.find((r) => r.employeeId === emp.id)
-                  const b = calcBeneficios(rec?.salarioBase ?? emp.salarioBase)
-                  return (
-                    <TableRow key={emp.id}>
-                      <TableCell className="font-medium">{emp.nombre}</TableCell>
-                      <TableCell className="text-right">{fmt(b.essalud)}</TableCell>
-                      <TableCell className="text-right">{fmt(b.cts)}</TableCell>
-                      <TableCell className="text-right">{fmt(b.gratificacion)}</TableCell>
-                      <TableCell className="text-right">{fmt(b.vacaciones)}</TableCell>
-                      <TableCell className="text-right font-semibold text-blue-600">{fmt(b.total)}</TableCell>
+          <TabsContent value="registros">
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Empleado</TableHead>
+                      <TableHead>Sucursal</TableHead>
+                      <TableHead className="text-right">Días Asist.</TableHead>
+                      <TableHead className="text-right">Sal. Base</TableHead>
+                      <TableHead className="text-right">Bruto</TableHead>
+                      <TableHead className="text-right">Descuentos</TableHead>
+                      <TableHead className="text-right">Neto</TableHead>
+                      <TableHead className="text-center">Pagado</TableHead>
+                      <TableHead />
                     </TableRow>
-                  )
-                })}
-                {filteredActiveEmployees.length > 0 && (
-                  <TableRow className="border-t-2 font-bold bg-muted/40">
-                    <TableCell>TOTAL</TableCell>
-                    <TableCell className="text-right">{fmt(benefTotals.essalud)}</TableCell>
-                    <TableCell className="text-right">{fmt(benefTotals.cts)}</TableCell>
-                    <TableCell className="text-right">{fmt(benefTotals.gratificacion)}</TableCell>
-                    <TableCell className="text-right">{fmt(benefTotals.vacaciones)}</TableCell>
-                    <TableCell className="text-right text-blue-600">{fmt(benefTotals.total)}</TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredActiveEmployees.map((emp) => {
+                      const rec = selectedPeriod.records.find((r) => r.employeeId === emp.id)
+                      const calc = rec ? calcNeto(rec.salarioBase, rec.diasTrabajados, rec.diasTotalesPeriodo || periodDaysTotal, rec.horasExtra, rec.valorHoraExtra, rec.bonificaciones, rec.descuentoAfp, rec.descuentoSeguro, rec.adelantos, rec.otrosDescuentos) : null
+                      const proyecto = emp.projectId ? data.projects.find((p) => p.id === emp.projectId) : null
+                      return (
+                        <TableRow key={emp.id} className={rec?.pagado ? "opacity-60" : ""}>
+                          <TableCell className="font-medium">
+                            {emp.nombre}
+                            {emp.bonoMartes > 0 && <Badge variant="outline" className="ml-2 text-xs">Mina</Badge>}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {proyecto?.name ?? <span className="text-xs">—</span>}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {rec ? (
+                              <span className="text-xs">
+                                <span className="font-medium">{rec.diasTrabajados}/{periodDaysTotal}d</span>
+                                {(periodDaysTotal - rec.diasTrabajados) > 0 && (
+                                  <span className="ml-1 text-orange-600">({periodDaysTotal - rec.diasTrabajados} faltó)</span>
+                                )}
+                              </span>
+                            ) : <span className="text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell className="text-right">{fmt(rec?.salarioBase ?? emp.salarioBase)}</TableCell>
+                          <TableCell className="text-right">{calc ? fmt(calc.bruto) : "—"}</TableCell>
+                          <TableCell className="text-right text-red-600">
+                            {rec ? fmt(rec.adelantos + rec.otrosDescuentos) : "—"}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold text-green-600">{calc ? fmt(calc.neto) : "—"}</TableCell>
+                          <TableCell className="text-center">
+                            {rec ? (
+                              <Button
+                                size="icon" variant="ghost"
+                                className={rec.pagado ? "text-green-600" : "text-muted-foreground"}
+                                title={rec.pagado ? "Pagado — clic para marcar pendiente" : "Pendiente — clic para marcar pagado"}
+                                onClick={() => markPayrollRecordPaid(selectedPeriod.id, rec.id, !rec.pagado)}
+                              >
+                                {rec.pagado ? <CheckCircle2 className="h-5 w-5" /> : <Circle className="h-5 w-5" />}
+                              </Button>
+                            ) : "—"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {selectedPeriod.estado === "abierto" && (
+                              <div className="flex justify-end gap-1">
+                                <Button size="icon" variant="ghost" onClick={() => openRecord(emp)}><Pencil className="h-4 w-4" /></Button>
+                                {rec && <Button size="icon" variant="ghost" className="text-red-500" onClick={() => setDeleteRecordEmpId(emp.id)}><Trash2 className="h-4 w-4" /></Button>}
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                    {filteredActiveEmployees.length === 0 && (
+                      <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No hay empleados activos{filterProjectId !== "todos" ? " en esta sucursal" : ""}</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="beneficios">
+            <Card>
+              <CardHeader className="pb-2">
+                <p className="text-xs text-muted-foreground">Provisiones mensuales estimadas. No se descuentan del neto del trabajador.</p>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Empleado</TableHead>
+                      <TableHead className="text-right">ESSALUD (9%)</TableHead>
+                      <TableHead className="text-right">CTS</TableHead>
+                      <TableHead className="text-right">Gratificación</TableHead>
+                      <TableHead className="text-right">Vacaciones</TableHead>
+                      <TableHead className="text-right">Total Provisión</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredActiveEmployees.map((emp) => {
+                      const rec = selectedPeriod.records.find((r) => r.employeeId === emp.id)
+                      const b = calcBeneficios(rec?.salarioBase ?? emp.salarioBase)
+                      return (
+                        <TableRow key={emp.id}>
+                          <TableCell className="font-medium">{emp.nombre}</TableCell>
+                          <TableCell className="text-right">{fmt(b.essalud)}</TableCell>
+                          <TableCell className="text-right">{fmt(b.cts)}</TableCell>
+                          <TableCell className="text-right">{fmt(b.gratificacion)}</TableCell>
+                          <TableCell className="text-right">{fmt(b.vacaciones)}</TableCell>
+                          <TableCell className="text-right font-semibold text-blue-600">{fmt(b.total)}</TableCell>
+                        </TableRow>
+                      )
+                    })}
+                    {filteredActiveEmployees.length > 0 && (
+                      <TableRow className="border-t-2 font-bold bg-muted/40">
+                        <TableCell>TOTAL</TableCell>
+                        <TableCell className="text-right">{fmt(benefTotals.essalud)}</TableCell>
+                        <TableCell className="text-right">{fmt(benefTotals.cts)}</TableCell>
+                        <TableCell className="text-right">{fmt(benefTotals.gratificacion)}</TableCell>
+                        <TableCell className="text-right">{fmt(benefTotals.vacaciones)}</TableCell>
+                        <TableCell className="text-right text-blue-600">{fmt(benefTotals.total)}</TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
         {/* Dialogs — period detail */}
         <AlertDialog open={closePeriodConfirm} onOpenChange={setClosePeriodConfirm}>
@@ -566,38 +577,35 @@ export default function PlanillaPage() {
               <DialogTitle>{data.employees.find((e) => e.id === recordEmpId)?.nombre ?? "Empleado"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              {/* Asistencia — rango de fechas */}
+              {/* Asistencia — días faltados */}
               <div className="rounded-lg border p-3 space-y-2">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Asistencia</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label>Fecha inicio *</Label>
-                    <Input type="date" value={recordForm.fechaInicioAsistencia}
-                      onChange={(e) => setRecordForm((f) => ({ ...f, fechaInicioAsistencia: e.target.value }))} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Fecha fin *</Label>
-                    <Input type="date" value={recordForm.fechaFinAsistencia}
-                      onChange={(e) => setRecordForm((f) => ({ ...f, fechaFinAsistencia: e.target.value }))} />
-                  </div>
+                <div className="space-y-1">
+                  <Label>Días faltados</Label>
+                  <Input
+                    type="number" min="0" max={previewDiasTotales}
+                    value={recordForm.diasFaltados}
+                    onChange={(e) => setRecordForm((f) => ({ ...f, diasFaltados: e.target.value }))}
+                  />
                 </div>
-                {recordForm.fechaInicioAsistencia && recordForm.fechaFinAsistencia && (
-                  <p className="text-xs text-muted-foreground">
-                    Días asistidos: <span className="font-semibold text-foreground">{previewDiasTrabajados}</span>
-                    {" / "}{previewDiasTotales} días del período
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  Días trabajados: <span className="font-semibold text-foreground">{previewDiasTrabajados}</span>
+                  {" / "}{previewDiasTotales} días del período
+                  {parseInt(recordForm.diasFaltados) > 0 && (
+                    <span className="ml-2 text-orange-600">
+                      · Descuento: {fmt((parseFloat(recordForm.salarioBase) || 0) / previewDiasTotales * (parseInt(recordForm.diasFaltados) || 0))}
+                    </span>
+                  )}
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1"><Label>Salario Base (S/)</Label><Input type="number" value={recordForm.salarioBase} onChange={(e) => setRecordForm((f) => ({ ...f, salarioBase: e.target.value }))} /></div>
-                <div className="space-y-1"><Label>Horas Extra</Label><Input type="number" value={recordForm.horasExtra} onChange={(e) => setRecordForm((f) => ({ ...f, horasExtra: e.target.value }))} /></div>
-                <div className="space-y-1"><Label>Valor Hora Extra (S/)</Label><Input type="number" value={recordForm.valorHoraExtra} onChange={(e) => setRecordForm((f) => ({ ...f, valorHoraExtra: e.target.value }))} /></div>
                 <div className="space-y-1">
                   <Label>Bonificaciones (S/)</Label>
                   <Input type="number" value={recordForm.bonificaciones} onChange={(e) => setRecordForm((f) => ({ ...f, bonificaciones: e.target.value }))} />
-                  {recordEmp && recordEmp.bonoMartes > 0 && recordForm.fechaInicioAsistencia && recordForm.fechaFinAsistencia && (
+                  {recordEmp && recordEmp.bonoMartes > 0 && (
                     <p className="text-xs text-muted-foreground">
-                      Bono mina: {countTuesdays(recordForm.fechaInicioAsistencia, recordForm.fechaFinAsistencia)} martes × {fmt(recordEmp.bonoMartes)} = <span className="font-semibold text-foreground">{fmt(martesBono)}</span>
+                      Bono mina: {martesBono > 0 ? fmt(martesBono) : "—"}
                     </p>
                   )}
                 </div>
@@ -605,8 +613,6 @@ export default function PlanillaPage() {
               <div className="rounded-lg border p-3 space-y-2">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Descuentos</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1"><Label>AFP / ONP (%)</Label><Input type="number" value={recordForm.afpPct} onChange={(e) => setRecordForm((f) => ({ ...f, afpPct: e.target.value }))} /></div>
-                  <div className="space-y-1"><Label>Desc. Fijo (S/)</Label><Input type="number" value={recordForm.descFijo} onChange={(e) => setRecordForm((f) => ({ ...f, descFijo: e.target.value }))} /></div>
                   <div className="space-y-1"><Label>Adelantos (S/)</Label><Input type="number" value={recordForm.adelantos} onChange={(e) => setRecordForm((f) => ({ ...f, adelantos: e.target.value }))} /></div>
                   <div className="space-y-1"><Label>Otros Desc. (S/)</Label><Input type="number" value={recordForm.otrosDescuentos} onChange={(e) => setRecordForm((f) => ({ ...f, otrosDescuentos: e.target.value }))} /></div>
                 </div>
@@ -669,8 +675,6 @@ export default function PlanillaPage() {
                     <TableHead>Cargo</TableHead>
                     <TableHead>Sucursal</TableHead>
                     <TableHead className="text-right">Sal. Base</TableHead>
-                    <TableHead className="text-right">AFP/ONP</TableHead>
-                    <TableHead className="text-right">Desc. Fijo</TableHead>
                     <TableHead className="text-right">Bono Mina</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead />
@@ -685,8 +689,6 @@ export default function PlanillaPage() {
                         <TableCell className="text-muted-foreground">{emp.cargo || "—"}</TableCell>
                         <TableCell className="text-muted-foreground">{proyecto?.name ?? "—"}</TableCell>
                         <TableCell className="text-right">{fmt(emp.salarioBase)}</TableCell>
-                        <TableCell className="text-right text-red-600">{emp.afpPct}%</TableCell>
-                        <TableCell className="text-right text-red-600">{fmt(emp.descFijo)}</TableCell>
                         <TableCell className="text-right">
                           {emp.bonoMartes > 0
                             ? <span className="text-blue-600 font-medium">{fmt(emp.bonoMartes)}/martes</span>
@@ -707,7 +709,7 @@ export default function PlanillaPage() {
                     )
                   })}
                   {data.employees.length === 0 && (
-                    <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No hay empleados registrados</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No hay empleados registrados</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -792,22 +794,6 @@ export default function PlanillaPage() {
               {data.projects.length === 0 && (
                 <p className="text-xs text-muted-foreground">Crea proyectos/locales en la sección Proyectos.</p>
               )}
-            </div>
-            {/* Descuentos por ley */}
-            <div className="rounded-lg border p-3 space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Descuentos por Ley</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label>AFP / ONP (%)</Label>
-                  <Input type="number" value={empForm.afpPct} onChange={(e) => setEmpForm((f) => ({ ...f, afpPct: e.target.value }))} placeholder="13" />
-                  <p className="text-xs text-muted-foreground">AFP ≈ 13% · ONP = 13%</p>
-                </div>
-                <div className="space-y-1">
-                  <Label>Desc. Fijo mensual (S/)</Label>
-                  <Input type="number" value={empForm.descFijo} onChange={(e) => setEmpForm((f) => ({ ...f, descFijo: e.target.value }))} placeholder="0" />
-                  <p className="text-xs text-muted-foreground">Adelantos fijos u otros</p>
-                </div>
-              </div>
             </div>
             {/* Bono mina */}
             <div className="rounded-lg border p-3 space-y-2">
