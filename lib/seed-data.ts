@@ -150,4 +150,7 @@ export const seedData: StoreData = {
   employees: [],
   attendanceRecords: [],
   payrollPeriods: [],
+  equipment: [],
+  equipmentDocuments: [],
+  maintenanceRecords: [],
 }

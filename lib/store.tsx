@@ -1,7 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react"
-import type { StoreData, Group, Worker, GarmentType, Order, OrderItem, OrderStatus, ValorizacionPeriod, Acta, Guia, ValorizacionItem, InventoryItem, InventoryMovement, Project, ProjectGarmentPrice, Employee, AttendanceRecord, PayrollPeriod, PayrollRecord } from "./types"
+import type { StoreData, Group, Worker, GarmentType, Order, OrderItem, OrderStatus, ValorizacionPeriod, Acta, Guia, ValorizacionItem, InventoryItem, InventoryMovement, Project, ProjectGarmentPrice, Employee, AttendanceRecord, PayrollPeriod, PayrollRecord, Equipment, EquipmentDocument, MaintenanceRecord } from "./types"
 import { supabase } from "./supabase"
 
 function generateId(): string {
@@ -29,6 +29,9 @@ const emptyData: StoreData = {
   employees: [],
   attendanceRecords: [],
   payrollPeriods: [],
+  equipment: [],
+  equipmentDocuments: [],
+  maintenanceRecords: [],
 }
 
 async function fetchAllData(): Promise<StoreData> {
@@ -51,6 +54,9 @@ async function fetchAllData(): Promise<StoreData> {
     { data: attendanceRaw },
     { data: payrollPeriodsRaw },
     { data: payrollRecordsRaw },
+    { data: equipmentRaw },
+    { data: equipmentDocumentsRaw },
+    { data: maintenanceRecordsRaw },
   ] = await Promise.all([
     supabase.from("groups").select("*").order("created_at"),
     supabase.from("workers").select("*").order("created_at"),
@@ -70,6 +76,9 @@ async function fetchAllData(): Promise<StoreData> {
     supabase.from("attendance_records").select("*").order("fecha", { ascending: false }),
     supabase.from("payroll_periods").select("*").order("created_at", { ascending: false }),
     supabase.from("payroll_records").select("*"),
+    supabase.from("equipment").select("*").order("created_at"),
+    supabase.from("equipment_documents").select("*").order("created_at"),
+    supabase.from("maintenance_records").select("*").order("fecha", { ascending: false }),
   ])
 
   const mappedOrders: Order[] = (orders ?? []).map((o) => ({
@@ -174,6 +183,26 @@ async function fetchAllData(): Promise<StoreData> {
       createdAt: p.created_at,
       records: mappedPayrollRecords.filter((r) => r.periodId === p.id),
     })),
+    equipment: (equipmentRaw ?? []).map((e) => ({
+      id: e.id, nombre: e.nombre, tipo: e.tipo as Equipment["tipo"],
+      marca: e.marca ?? "", modelo: e.modelo ?? "", placa: e.placa ?? "",
+      anio: e.anio ?? null, fechaAdquisicion: e.fecha_adquisicion ?? "",
+      estado: e.estado as Equipment["estado"], notas: e.notas ?? "",
+      createdAt: e.created_at,
+    })),
+    equipmentDocuments: (equipmentDocumentsRaw ?? []).map((d) => ({
+      id: d.id, equipmentId: d.equipment_id, nombre: d.nombre,
+      numero: d.numero ?? "", fechaEmision: d.fecha_emision ?? "",
+      fechaVencimiento: d.fecha_vencimiento ?? "", notas: d.notas ?? "",
+      createdAt: d.created_at,
+    })),
+    maintenanceRecords: (maintenanceRecordsRaw ?? []).map((m) => ({
+      id: m.id, equipmentId: m.equipment_id, fecha: m.fecha,
+      tipo: m.tipo as MaintenanceRecord["tipo"], descripcion: m.descripcion ?? "",
+      piezasReemplazadas: m.piezas_reemplazadas ?? "", proveedor: m.proveedor ?? "",
+      costo: m.costo ?? 0, proximoMantenimiento: m.proximo_mantenimiento ?? "",
+      notas: m.notas ?? "", createdAt: m.created_at,
+    })),
   }
 }
 
@@ -244,6 +273,18 @@ interface StoreContextType {
   upsertPayrollRecord: (periodId: string, record: Omit<PayrollRecord, "id" | "periodId" | "netoAPagar">) => Promise<void>
   deletePayrollRecord: (periodId: string, recordId: string) => Promise<void>
   markPayrollRecordPaid: (periodId: string, recordId: string, pagado: boolean) => Promise<void>
+  // Equipment
+  addEquipment: (nombre: string, tipo: Equipment["tipo"], marca: string, modelo: string, placa: string, anio: number | null, fechaAdquisicion: string, estado: Equipment["estado"], notas: string) => Promise<Equipment>
+  updateEquipment: (id: string, nombre: string, tipo: Equipment["tipo"], marca: string, modelo: string, placa: string, anio: number | null, fechaAdquisicion: string, estado: Equipment["estado"], notas: string) => Promise<void>
+  deleteEquipment: (id: string) => Promise<void>
+  // Equipment Documents
+  addEquipmentDocument: (equipmentId: string, nombre: string, numero: string, fechaEmision: string, fechaVencimiento: string, notas: string) => Promise<EquipmentDocument>
+  updateEquipmentDocument: (id: string, nombre: string, numero: string, fechaEmision: string, fechaVencimiento: string, notas: string) => Promise<void>
+  deleteEquipmentDocument: (id: string) => Promise<void>
+  // Maintenance Records
+  addMaintenanceRecord: (equipmentId: string, fecha: string, tipo: MaintenanceRecord["tipo"], descripcion: string, piezasReemplazadas: string, proveedor: string, costo: number, proximoMantenimiento: string, notas: string) => Promise<MaintenanceRecord>
+  updateMaintenanceRecord: (id: string, fecha: string, tipo: MaintenanceRecord["tipo"], descripcion: string, piezasReemplazadas: string, proveedor: string, costo: number, proximoMantenimiento: string, notas: string) => Promise<void>
+  deleteMaintenanceRecord: (id: string) => Promise<void>
   // Reset
   resetData: () => Promise<void>
 }
@@ -737,6 +778,92 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     await supabase.from("payroll_records").update({ pagado }).eq("id", recordId)
   }, [])
 
+  // ── Equipment ─────────────────────────────────────────────────────────────────
+
+  const addEquipment = useCallback(async (
+    nombre: string, tipo: Equipment["tipo"], marca: string, modelo: string,
+    placa: string, anio: number | null, fechaAdquisicion: string,
+    estado: Equipment["estado"], notas: string
+  ): Promise<Equipment> => {
+    const eq: Equipment = { id: generateId(), nombre, tipo, marca, modelo, placa, anio, fechaAdquisicion, estado, notas, createdAt: new Date().toISOString() }
+    setData((prev) => ({ ...prev, equipment: [...prev.equipment, eq] }))
+    await supabase.from("equipment").insert({ id: eq.id, nombre, tipo, marca, modelo, placa, anio, fecha_adquisicion: fechaAdquisicion, estado, notas, created_at: eq.createdAt })
+    return eq
+  }, [])
+
+  const updateEquipment = useCallback(async (
+    id: string, nombre: string, tipo: Equipment["tipo"], marca: string, modelo: string,
+    placa: string, anio: number | null, fechaAdquisicion: string,
+    estado: Equipment["estado"], notas: string
+  ) => {
+    setData((prev) => ({ ...prev, equipment: prev.equipment.map((e) => e.id === id ? { ...e, nombre, tipo, marca, modelo, placa, anio, fechaAdquisicion, estado, notas } : e) }))
+    await supabase.from("equipment").update({ nombre, tipo, marca, modelo, placa, anio, fecha_adquisicion: fechaAdquisicion, estado, notas }).eq("id", id)
+  }, [])
+
+  const deleteEquipment = useCallback(async (id: string) => {
+    setData((prev) => ({
+      ...prev,
+      equipment: prev.equipment.filter((e) => e.id !== id),
+      equipmentDocuments: prev.equipmentDocuments.filter((d) => d.equipmentId !== id),
+      maintenanceRecords: prev.maintenanceRecords.filter((m) => m.equipmentId !== id),
+    }))
+    await supabase.from("equipment_documents").delete().eq("equipment_id", id)
+    await supabase.from("maintenance_records").delete().eq("equipment_id", id)
+    await supabase.from("equipment").delete().eq("id", id)
+  }, [])
+
+  // ── Equipment Documents ────────────────────────────────────────────────────────
+
+  const addEquipmentDocument = useCallback(async (
+    equipmentId: string, nombre: string, numero: string,
+    fechaEmision: string, fechaVencimiento: string, notas: string
+  ): Promise<EquipmentDocument> => {
+    const doc: EquipmentDocument = { id: generateId(), equipmentId, nombre, numero, fechaEmision, fechaVencimiento, notas, createdAt: new Date().toISOString() }
+    setData((prev) => ({ ...prev, equipmentDocuments: [...prev.equipmentDocuments, doc] }))
+    await supabase.from("equipment_documents").insert({ id: doc.id, equipment_id: equipmentId, nombre, numero, fecha_emision: fechaEmision, fecha_vencimiento: fechaVencimiento || null, notas, created_at: doc.createdAt })
+    return doc
+  }, [])
+
+  const updateEquipmentDocument = useCallback(async (
+    id: string, nombre: string, numero: string,
+    fechaEmision: string, fechaVencimiento: string, notas: string
+  ) => {
+    setData((prev) => ({ ...prev, equipmentDocuments: prev.equipmentDocuments.map((d) => d.id === id ? { ...d, nombre, numero, fechaEmision, fechaVencimiento, notas } : d) }))
+    await supabase.from("equipment_documents").update({ nombre, numero, fecha_emision: fechaEmision, fecha_vencimiento: fechaVencimiento || null, notas }).eq("id", id)
+  }, [])
+
+  const deleteEquipmentDocument = useCallback(async (id: string) => {
+    setData((prev) => ({ ...prev, equipmentDocuments: prev.equipmentDocuments.filter((d) => d.id !== id) }))
+    await supabase.from("equipment_documents").delete().eq("id", id)
+  }, [])
+
+  // ── Maintenance Records ────────────────────────────────────────────────────────
+
+  const addMaintenanceRecord = useCallback(async (
+    equipmentId: string, fecha: string, tipo: MaintenanceRecord["tipo"],
+    descripcion: string, piezasReemplazadas: string, proveedor: string,
+    costo: number, proximoMantenimiento: string, notas: string
+  ): Promise<MaintenanceRecord> => {
+    const rec: MaintenanceRecord = { id: generateId(), equipmentId, fecha, tipo, descripcion, piezasReemplazadas, proveedor, costo, proximoMantenimiento, notas, createdAt: new Date().toISOString() }
+    setData((prev) => ({ ...prev, maintenanceRecords: [rec, ...prev.maintenanceRecords] }))
+    await supabase.from("maintenance_records").insert({ id: rec.id, equipment_id: equipmentId, fecha, tipo, descripcion, piezas_reemplazadas: piezasReemplazadas, proveedor, costo, proximo_mantenimiento: proximoMantenimiento || null, notas, created_at: rec.createdAt })
+    return rec
+  }, [])
+
+  const updateMaintenanceRecord = useCallback(async (
+    id: string, fecha: string, tipo: MaintenanceRecord["tipo"],
+    descripcion: string, piezasReemplazadas: string, proveedor: string,
+    costo: number, proximoMantenimiento: string, notas: string
+  ) => {
+    setData((prev) => ({ ...prev, maintenanceRecords: prev.maintenanceRecords.map((m) => m.id === id ? { ...m, fecha, tipo, descripcion, piezasReemplazadas, proveedor, costo, proximoMantenimiento, notas } : m) }))
+    await supabase.from("maintenance_records").update({ fecha, tipo, descripcion, piezas_reemplazadas: piezasReemplazadas, proveedor, costo, proximo_mantenimiento: proximoMantenimiento || null, notas }).eq("id", id)
+  }, [])
+
+  const deleteMaintenanceRecord = useCallback(async (id: string) => {
+    setData((prev) => ({ ...prev, maintenanceRecords: prev.maintenanceRecords.filter((m) => m.id !== id) }))
+    await supabase.from("maintenance_records").delete().eq("id", id)
+  }, [])
+
   // ── Reset ────────────────────────────────────────────────────────────────────
 
   const resetData = useCallback(async () => {
@@ -769,6 +896,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         addAttendanceRecord, updateAttendanceRecord, deleteAttendanceRecord,
         addPayrollPeriod, deletePayrollPeriod, closePayrollPeriod,
         upsertPayrollRecord, deletePayrollRecord, markPayrollRecordPaid,
+        addEquipment, updateEquipment, deleteEquipment,
+        addEquipmentDocument, updateEquipmentDocument, deleteEquipmentDocument,
+        addMaintenanceRecord, updateMaintenanceRecord, deleteMaintenanceRecord,
         resetData,
       }}
     >

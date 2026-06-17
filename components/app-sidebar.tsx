@@ -12,6 +12,7 @@ import {
   Package,
   Building2,
   Wallet,
+  Wrench,
 } from "lucide-react"
 import {
   Sidebar,
@@ -33,6 +34,7 @@ const navItems = [
   { title: "Valorizacion", href: "/valorizacion", icon: Receipt },
   { title: "Inventario", href: "/inventario", icon: Package },
   { title: "Planilla", href: "/planilla", icon: Wallet },
+  { title: "Equipos", href: "/equipos", icon: Wrench },
   { title: "Reportes", href: "/reportes", icon: BarChart3 },
 ]
 

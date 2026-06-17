@@ -160,6 +160,45 @@ export interface PayrollPeriod {
   createdAt: string
 }
 
+export interface Equipment {
+  id: string
+  nombre: string
+  tipo: "lavadora" | "carro" | "camion"
+  marca: string
+  modelo: string
+  placa: string
+  anio: number | null
+  fechaAdquisicion: string
+  estado: "activo" | "en_mantenimiento" | "inactivo"
+  notas: string
+  createdAt: string
+}
+
+export interface EquipmentDocument {
+  id: string
+  equipmentId: string
+  nombre: string
+  numero: string
+  fechaEmision: string
+  fechaVencimiento: string   // "" = sin vencimiento
+  notas: string
+  createdAt: string
+}
+
+export interface MaintenanceRecord {
+  id: string
+  equipmentId: string
+  fecha: string
+  tipo: "preventivo" | "correctivo" | "revision"
+  descripcion: string
+  piezasReemplazadas: string
+  proveedor: string
+  costo: number
+  proximoMantenimiento: string   // "" = no programado
+  notas: string
+  createdAt: string
+}
+
 export interface StoreData {
   groups: Group[]
   workers: Worker[]
@@ -173,6 +212,9 @@ export interface StoreData {
   employees: Employee[]
   attendanceRecords: AttendanceRecord[]
   payrollPeriods: PayrollPeriod[]
+  equipment: Equipment[]
+  equipmentDocuments: EquipmentDocument[]
+  maintenanceRecords: MaintenanceRecord[]
 }
 
 // kept for backwards compat — not used after inventory redesign
