@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from "sonner"
-import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
-import { AppSidebar } from "@/components/app-sidebar"
+import { AuthProvider } from "@/lib/auth"
+import { AppShell } from "@/components/app-shell"
 import { StoreProvider } from "@/lib/store"
 import './globals.css'
 
@@ -45,14 +45,13 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className="font-sans antialiased">
-        <StoreProvider>
-          <SidebarProvider>
-            <AppSidebar />
-            <SidebarInset>
+        <AuthProvider>
+          <StoreProvider>
+            <AppShell>
               {children}
-            </SidebarInset>
-          </SidebarProvider>
-        </StoreProvider>
+            </AppShell>
+          </StoreProvider>
+        </AuthProvider>
         <Toaster position="top-right" richColors />
         <Analytics />
       </body>

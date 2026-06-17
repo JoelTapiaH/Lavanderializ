@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useStore } from "@/lib/store"
+import { useAuth, canEditModule } from "@/lib/auth"
 import { PageHeader } from "@/components/page-header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -31,6 +32,8 @@ import { es } from "date-fns/locale"
 
 export default function PrendasPage() {
   const { data, addGarmentType, updateGarmentType, deleteGarmentType, eliminateGarmentType, reactivateGarmentType } = useStore()
+  const { profile } = useAuth()
+  const canEdit = canEditModule(profile?.role ?? "operador", "prendas")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState("")
@@ -102,7 +105,7 @@ export default function PrendasPage() {
       <PageHeader
         title="Tipos de Prenda"
         description={`${data.garmentTypes.length} tipos registrados`}
-        actions={
+        actions={canEdit ? (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={openCreate}>
@@ -154,7 +157,7 @@ export default function PrendasPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        }
+        ) : undefined}
       />
       <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
         {data.garmentTypes.length === 0 ? (
@@ -165,10 +168,12 @@ export default function PrendasPage() {
                 <p className="font-medium text-card-foreground">No hay tipos de prenda</p>
                 <p className="text-sm text-muted-foreground">Crea tu primer tipo para empezar</p>
               </div>
-              <Button onClick={openCreate}>
-                <Plus className="mr-2 h-4 w-4" />
-                Crear Tipo de Prenda
-              </Button>
+              {canEdit && (
+                <Button onClick={openCreate}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Crear Tipo de Prenda
+                </Button>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -212,46 +217,48 @@ export default function PrendasPage() {
                         {format(new Date(gt.createdAt), "dd MMM yyyy", { locale: es })}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => openEdit(gt.id)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          {gt.active ? (
+                        {canEdit && (
+                          <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="ghost"
-                              size="sm"
-                              className="h-8 text-destructive hover:text-destructive gap-1"
-                              onClick={() => handleEliminate(gt.id)}
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => openEdit(gt.id)}
                             >
-                              <Ban className="h-3.5 w-3.5" />
-                              Eliminar
+                              <Pencil className="h-3.5 w-3.5" />
                             </Button>
-                          ) : (
+                            {gt.active ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-destructive hover:text-destructive gap-1"
+                                onClick={() => handleEliminate(gt.id)}
+                              >
+                                <Ban className="h-3.5 w-3.5" />
+                                Eliminar
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-green-600 hover:text-green-700 gap-1"
+                                onClick={() => handleReactivate(gt.id)}
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" />
+                                Reactivar
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
-                              size="sm"
-                              className="h-8 text-green-600 hover:text-green-700 gap-1"
-                              onClick={() => handleReactivate(gt.id)}
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              title="Borrar permanentemente"
+                              onClick={() => handleDelete(gt.id)}
                             >
-                              <RotateCcw className="h-3.5 w-3.5" />
-                              Reactivar
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                            title="Borrar permanentemente"
-                            onClick={() => handleDelete(gt.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

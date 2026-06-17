@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useStore } from "@/lib/store"
+import { useAuth, canEditModule } from "@/lib/auth"
 import { PageHeader } from "@/components/page-header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -36,6 +37,8 @@ import { toast } from "sonner"
 
 export default function MinerosPage() {
   const { data, addWorker, updateWorker, deleteWorker, getGroup, getOrdersByWorker } = useStore()
+  const { profile } = useAuth()
+  const canEdit = canEditModule(profile?.role ?? "operador", "mineros")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState("")
@@ -104,7 +107,7 @@ export default function MinerosPage() {
       <PageHeader
         title="Mineros / Trabajadores"
         description={`${data.workers.length} mineros registrados`}
-        actions={
+        actions={canEdit ? (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={openCreate}>
@@ -164,7 +167,7 @@ export default function MinerosPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        }
+        ) : undefined}
       />
       <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -230,26 +233,28 @@ export default function MinerosPage() {
                         </TableCell>
                         <TableCell className="hidden text-muted-foreground sm:table-cell">{orders.length}</TableCell>
                         <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => openEdit(worker.id)}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                              <span className="sr-only">Editar</span>
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={() => handleDelete(worker.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              <span className="sr-only">Eliminar</span>
-                            </Button>
-                          </div>
+                          {canEdit && (
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openEdit(worker.id)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                <span className="sr-only">Editar</span>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                onClick={() => handleDelete(worker.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                <span className="sr-only">Eliminar</span>
+                              </Button>
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     )

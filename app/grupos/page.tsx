@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useStore } from "@/lib/store"
+import { useAuth, canEditModule } from "@/lib/auth"
 import { PageHeader } from "@/components/page-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -30,6 +31,8 @@ import { toast } from "sonner"
 
 export default function GruposPage() {
   const { data, addGroup, updateGroup, deleteGroup, getWorkersByGroup, getOrdersByGroup } = useStore()
+  const { profile } = useAuth()
+  const canEdit = canEditModule(profile?.role ?? "operador", "grupos")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState("")
@@ -86,7 +89,7 @@ export default function GruposPage() {
       <PageHeader
         title="Cuadrillas / Equipos"
         description={`${data.groups.length} cuadrillas registradas`}
-        actions={
+        actions={canEdit ? (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={openCreate}>
@@ -134,7 +137,7 @@ export default function GruposPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        }
+        ) : undefined}
       />
       <main className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
         {data.groups.length === 0 ? (
@@ -145,10 +148,12 @@ export default function GruposPage() {
                 <p className="font-medium text-card-foreground">No hay cuadrillas</p>
                 <p className="text-sm text-muted-foreground">Crea tu primera cuadrilla para empezar</p>
               </div>
-              <Button onClick={openCreate}>
-                <Plus className="mr-2 h-4 w-4" />
-                Crear Cuadrilla
-              </Button>
+              {canEdit && (
+                <Button onClick={openCreate}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Crear Cuadrilla
+                </Button>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -169,26 +174,28 @@ export default function GruposPage() {
                         <CardDescription>{group.description || "Sin descripcion"}</CardDescription>
                       </div>
                     </div>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEdit(group.id)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        <span className="sr-only">Editar</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => handleDelete(group.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        <span className="sr-only">Eliminar</span>
-                      </Button>
-                    </div>
+                    {canEdit && (
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => openEdit(group.id)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          <span className="sr-only">Editar</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => handleDelete(group.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span className="sr-only">Eliminar</span>
+                        </Button>
+                      </div>
+                    )}
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-3 gap-4 text-center">

@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useStore } from "@/lib/store"
+import { useAuth, canEditModule } from "@/lib/auth"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -21,6 +22,8 @@ import { generateValorizacionPdf } from "@/lib/generate-pdf"
 import { generateValorizacionExcel } from "@/lib/generate-excel"
 
 export default function ValorizacionPage() {
+  const { profile } = useAuth()
+  const canEdit = canEditModule(profile?.role ?? "operador", "valorizacion")
   const {
     data,
     deleteValorizacion,
@@ -155,7 +158,7 @@ export default function ValorizacionPage() {
       <PageHeader
         title="Valorizacion del Servicio"
         description="Registro de prendas enviadas y recibidas por periodo. Haz clic en cualquier celda para editar."
-        actions={
+        actions={canEdit ? (
           <Button
             onClick={() => {
               setEditPeriodId(null)
@@ -165,7 +168,7 @@ export default function ValorizacionPage() {
             <Plus className="mr-2 h-4 w-4" />
             Nuevo Periodo
           </Button>
-        }
+        ) : undefined}
       />
       <main className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
         {/* Project + Period selector */}
@@ -241,23 +244,27 @@ export default function ValorizacionPage() {
                   <FileSpreadsheet className="mr-1 h-3.5 w-3.5" />
                   Exportar Excel
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleEditPeriod}
-                >
-                  <Pencil className="mr-1 h-3.5 w-3.5" />
-                  Editar
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-destructive hover:text-destructive"
-                  onClick={handleDeletePeriod}
-                >
-                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                  Eliminar
-                </Button>
+                {canEdit && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleEditPeriod}
+                    >
+                      <Pencil className="mr-1 h-3.5 w-3.5" />
+                      Editar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={handleDeletePeriod}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                      Eliminar
+                    </Button>
+                  </>
+                )}
               </div>
             )}
           </CardContent>

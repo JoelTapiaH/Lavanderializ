@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useStore } from "@/lib/store"
+import { useAuth, canEditModule } from "@/lib/auth"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -62,6 +63,8 @@ interface MovementFormState {
 
 export default function InventarioPage() {
   const { data, addInventoryItem, updateInventoryItem, deleteInventoryItem, addInventoryMovement } = useStore()
+  const { profile } = useAuth()
+  const canEdit = canEditModule(profile?.role ?? "operador", "inventario")
 
   const [itemDialogOpen, setItemDialogOpen] = useState(false)
   const [editItemId, setEditItemId] = useState<string | null>(null)
@@ -167,12 +170,12 @@ export default function InventarioPage() {
       <PageHeader
         title="Control de Inventario"
         description="Gestiona el stock de insumos y materiales."
-        actions={
+        actions={canEdit ? (
           <Button onClick={openAddItem}>
             <Plus className="mr-2 h-4 w-4" />
             Nuevo Item
           </Button>
-        }
+        ) : undefined}
       />
       <main className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
 
@@ -272,37 +275,39 @@ export default function InventarioPage() {
                               S/ {(item.quantity * item.cost).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-end gap-1">
-                                <Button
-                                  size="icon" variant="ghost"
-                                  className="h-7 w-7 text-green-600 hover:text-green-700"
-                                  title="Entrada"
-                                  onClick={() => openMovement(item.id, "entrada")}
-                                >
-                                  <ArrowUpCircle className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="icon" variant="ghost"
-                                  className="h-7 w-7 text-orange-600 hover:text-orange-700"
-                                  title="Salida"
-                                  onClick={() => openMovement(item.id, "salida")}
-                                >
-                                  <ArrowDownCircle className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="icon" variant="ghost" className="h-7 w-7"
-                                  onClick={() => openEditItem(item.id)}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  size="icon" variant="ghost"
-                                  className="h-7 w-7 text-destructive hover:text-destructive"
-                                  onClick={() => handleDeleteItem(item.id)}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
+                              {canEdit && (
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    size="icon" variant="ghost"
+                                    className="h-7 w-7 text-green-600 hover:text-green-700"
+                                    title="Entrada"
+                                    onClick={() => openMovement(item.id, "entrada")}
+                                  >
+                                    <ArrowUpCircle className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon" variant="ghost"
+                                    className="h-7 w-7 text-orange-600 hover:text-orange-700"
+                                    title="Salida"
+                                    onClick={() => openMovement(item.id, "salida")}
+                                  >
+                                    <ArrowDownCircle className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon" variant="ghost" className="h-7 w-7"
+                                    onClick={() => openEditItem(item.id)}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    size="icon" variant="ghost"
+                                    className="h-7 w-7 text-destructive hover:text-destructive"
+                                    onClick={() => handleDeleteItem(item.id)}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              )}
                             </TableCell>
                           </TableRow>
                         )

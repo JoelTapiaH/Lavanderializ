@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useStore } from "@/lib/store"
+import { useAuth, canEditModule } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -78,6 +79,8 @@ const emptyMaintForm = {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function EquiposPage() {
+  const { profile } = useAuth()
+  const canEdit = canEditModule(profile?.role ?? "operador", "equipos")
   const {
     data,
     addEquipment, updateEquipment, deleteEquipment,
@@ -243,9 +246,11 @@ export default function EquiposPage() {
           </div>
           <div className="flex items-center gap-2">
             {estadoBadge(selectedEquipment.estado)}
-            <Button variant="outline" size="sm" onClick={() => openEditEq(selectedEquipment)}>
-              <Pencil className="h-4 w-4 mr-1" />Editar
-            </Button>
+            {canEdit && (
+              <Button variant="outline" size="sm" onClick={() => openEditEq(selectedEquipment)}>
+                <Pencil className="h-4 w-4 mr-1" />Editar
+              </Button>
+            )}
           </div>
         </div>
 
@@ -277,9 +282,11 @@ export default function EquiposPage() {
 
           {/* Documentos */}
           <TabsContent value="documentos" className="space-y-3">
-            <div className="flex justify-end">
-              <Button size="sm" onClick={openNewDoc}><Plus className="h-4 w-4 mr-1" />Agregar Documento</Button>
-            </div>
+            {canEdit && (
+              <div className="flex justify-end">
+                <Button size="sm" onClick={openNewDoc}><Plus className="h-4 w-4 mr-1" />Agregar Documento</Button>
+              </div>
+            )}
             <Card>
               <CardContent className="p-0">
                 <Table>
@@ -315,10 +322,12 @@ export default function EquiposPage() {
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">{doc.notas || "—"}</TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              <Button size="icon" variant="ghost" onClick={() => openEditDoc(doc)}><Pencil className="h-4 w-4" /></Button>
-                              <Button size="icon" variant="ghost" className="text-red-500" onClick={() => setDeleteDocId(doc.id)}><Trash2 className="h-4 w-4" /></Button>
-                            </div>
+                            {canEdit && (
+                              <div className="flex justify-end gap-1">
+                                <Button size="icon" variant="ghost" onClick={() => openEditDoc(doc)}><Pencil className="h-4 w-4" /></Button>
+                                <Button size="icon" variant="ghost" className="text-red-500" onClick={() => setDeleteDocId(doc.id)}><Trash2 className="h-4 w-4" /></Button>
+                              </div>
+                            )}
                           </TableCell>
                         </TableRow>
                       )
@@ -334,9 +343,11 @@ export default function EquiposPage() {
 
           {/* Mantenimientos */}
           <TabsContent value="mantenimientos" className="space-y-3">
-            <div className="flex justify-end">
-              <Button size="sm" onClick={openNewMaint}><Plus className="h-4 w-4 mr-1" />Registrar Mantenimiento</Button>
-            </div>
+            {canEdit && (
+              <div className="flex justify-end">
+                <Button size="sm" onClick={openNewMaint}><Plus className="h-4 w-4 mr-1" />Registrar Mantenimiento</Button>
+              </div>
+            )}
             <Card>
               <CardContent className="p-0">
                 <Table>
@@ -382,10 +393,12 @@ export default function EquiposPage() {
                             ) : <span className="text-muted-foreground text-sm">—</span>}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              <Button size="icon" variant="ghost" onClick={() => openEditMaint(m)}><Pencil className="h-4 w-4" /></Button>
-                              <Button size="icon" variant="ghost" className="text-red-500" onClick={() => setDeleteMaintId(m.id)}><Trash2 className="h-4 w-4" /></Button>
-                            </div>
+                            {canEdit && (
+                              <div className="flex justify-end gap-1">
+                                <Button size="icon" variant="ghost" onClick={() => openEditMaint(m)}><Pencil className="h-4 w-4" /></Button>
+                                <Button size="icon" variant="ghost" className="text-red-500" onClick={() => setDeleteMaintId(m.id)}><Trash2 className="h-4 w-4" /></Button>
+                              </div>
+                            )}
                           </TableCell>
                         </TableRow>
                       )
@@ -537,7 +550,7 @@ export default function EquiposPage() {
           <h1 className="text-2xl font-bold">Equipos</h1>
           <p className="text-sm text-muted-foreground">Lavadoras, carros y camiones — documentos y mantenimientos</p>
         </div>
-        <Button onClick={openNewEq}><Plus className="h-4 w-4 mr-2" />Nuevo Equipo</Button>
+        {canEdit && <Button onClick={openNewEq}><Plus className="h-4 w-4 mr-2" />Nuevo Equipo</Button>}
       </div>
 
       {/* Alerts */}
@@ -569,7 +582,7 @@ export default function EquiposPage() {
         <div className="text-center text-muted-foreground py-16">
           <Wrench className="h-10 w-10 mx-auto mb-3 opacity-30" />
           <p>No hay equipos registrados.</p>
-          <Button className="mt-4" onClick={openNewEq}><Plus className="h-4 w-4 mr-2" />Registrar primer equipo</Button>
+          {canEdit && <Button className="mt-4" onClick={openNewEq}><Plus className="h-4 w-4 mr-2" />Registrar primer equipo</Button>}
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

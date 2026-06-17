@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useStore } from "@/lib/store"
+import { useAuth, canEditModule } from "@/lib/auth"
 import { PageHeader } from "@/components/page-header"
 import { OrderTable } from "@/components/order-table"
 import { OrderDetail } from "@/components/order-detail"
@@ -20,6 +21,8 @@ import type { OrderStatus } from "@/lib/types"
 
 export default function OrdenesPage() {
   const { data } = useStore()
+  const { profile } = useAuth()
+  const canEdit = canEditModule(profile?.role ?? "operador", "ordenes")
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "todos">("todos")
   const [groupFilter, setGroupFilter] = useState<string>("todos")
@@ -40,14 +43,14 @@ export default function OrdenesPage() {
       <PageHeader
         title="Ordenes de Lavado"
         description={`${data.orders.length} ordenes registradas`}
-        actions={
+        actions={canEdit ? (
           <Button asChild>
             <Link href="/ordenes/nueva">
               <Plus className="mr-2 h-4 w-4" />
               Nueva Orden
             </Link>
           </Button>
-        }
+        ) : undefined}
       />
       <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

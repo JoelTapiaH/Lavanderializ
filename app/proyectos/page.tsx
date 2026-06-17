@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useStore } from "@/lib/store"
+import { useAuth, canEditModule } from "@/lib/auth"
 import { PageHeader } from "@/components/page-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -28,6 +29,8 @@ import { toast } from "sonner"
 
 export default function ProyectosPage() {
   const { data, addProject, updateProject, deleteProject, upsertProjectGarmentPrice } = useStore()
+  const { profile } = useAuth()
+  const canEdit = canEditModule(profile?.role ?? "operador", "proyectos")
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -103,12 +106,12 @@ export default function ProyectosPage() {
       <PageHeader
         title="Proyectos"
         description="Gestiona los proyectos (clientes mineros) y sus precios unitarios por prenda."
-        actions={
+        actions={canEdit ? (
           <Button onClick={openCreate}>
             <Plus className="mr-2 h-4 w-4" />
             Nuevo Proyecto
           </Button>
-        }
+        ) : undefined}
       />
       <main className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
         {data.projects.length === 0 ? (
@@ -119,10 +122,12 @@ export default function ProyectosPage() {
                 <p className="font-medium">No hay proyectos</p>
                 <p className="text-sm text-muted-foreground">Crea tu primer proyecto para comenzar</p>
               </div>
-              <Button onClick={openCreate}>
-                <Plus className="mr-2 h-4 w-4" />
-                Crear Proyecto
-              </Button>
+              {canEdit && (
+                <Button onClick={openCreate}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Crear Proyecto
+                </Button>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -142,14 +147,16 @@ export default function ProyectosPage() {
                         <CardDescription>{project.description || "Sin descripción"}</CardDescription>
                       </div>
                     </div>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(project.id)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDelete(project.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                    {canEdit && (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(project.id)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDelete(project.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
                   </CardHeader>
                   <CardContent className="flex flex-col gap-4">
                     <div className="grid grid-cols-2 gap-4 text-center">
@@ -162,10 +169,12 @@ export default function ProyectosPage() {
                         <p className="text-xs text-muted-foreground">Precios config.</p>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" className="w-full" onClick={() => openPrices(project.id)}>
-                      <Settings2 className="mr-2 h-3.5 w-3.5" />
-                      Configurar Precios
-                    </Button>
+                    {canEdit && (
+                      <Button variant="outline" size="sm" className="w-full" onClick={() => openPrices(project.id)}>
+                        <Settings2 className="mr-2 h-3.5 w-3.5" />
+                        Configurar Precios
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               )
