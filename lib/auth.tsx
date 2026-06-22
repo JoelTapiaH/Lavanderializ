@@ -90,15 +90,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null)
       if (session?.user) {
-        await fetchOrCreateProfile(session.user)
+        try { await fetchOrCreateProfile(session.user) } catch (e) { console.error("profile error:", e) }
       }
+      setLoading(false)
+    }).catch((e) => {
+      console.error("getSession error:", e)
       setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) {
-        await fetchOrCreateProfile(session.user)
+        try { await fetchOrCreateProfile(session.user) } catch (e) { console.error("profile error:", e) }
       } else {
         setProfile(null)
       }
