@@ -34,13 +34,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [loading, user, profile, pathname, isLoginPage, router])
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
+  const spinner = (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  )
+
+  if (loading) return spinner
 
   // Login page renders without sidebar
   if (isLoginPage) {
@@ -48,13 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   // Not authenticated yet — redirect is pending, show spinner instead of app pages
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
+  if (!user) return spinner
 
   // Authenticated: render with sidebar
   return (

@@ -87,13 +87,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    // Safety timeout — never stay blank forever
+    const timeout = setTimeout(() => {
+      console.warn("Auth timeout — forcing loading=false")
+      setLoading(false)
+    }, 6000)
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      clearTimeout(timeout)
       setUser(session?.user ?? null)
       if (session?.user) {
         try { await fetchOrCreateProfile(session.user) } catch (e) { console.error("profile error:", e) }
       }
       setLoading(false)
     }).catch((e) => {
+      clearTimeout(timeout)
       console.error("getSession error:", e)
       setLoading(false)
     })
