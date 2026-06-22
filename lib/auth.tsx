@@ -93,7 +93,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
     }, 6000)
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    const sessionPromise = supabase.auth.getSession()
+    const timeoutPromise = new Promise<{ data: { session: null } }>((resolve) =>
+      setTimeout(() => resolve({ data: { session: null } }), 3000)
+    )
+
+    Promise.race([sessionPromise, timeoutPromise]).then(async ({ data: { session } }) => {
       clearTimeout(timeout)
       setUser(session?.user ?? null)
       if (session?.user) {
