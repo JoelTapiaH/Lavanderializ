@@ -182,6 +182,7 @@ export interface EquipmentDocument {
   fechaEmision: string
   fechaVencimiento: string   // "" = sin vencimiento
   notas: string
+  fileUrl: string            // URL del archivo en Supabase Storage ("" = sin archivo)
   createdAt: string
 }
 

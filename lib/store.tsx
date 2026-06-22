@@ -194,6 +194,7 @@ async function fetchAllData(): Promise<StoreData> {
       id: d.id, equipmentId: d.equipment_id, nombre: d.nombre,
       numero: d.numero ?? "", fechaEmision: d.fecha_emision ?? "",
       fechaVencimiento: d.fecha_vencimiento ?? "", notas: d.notas ?? "",
+      fileUrl: d.file_url ?? "",
       createdAt: d.created_at,
     })),
     maintenanceRecords: (maintenanceRecordsRaw ?? []).map((m) => ({
@@ -278,8 +279,8 @@ interface StoreContextType {
   updateEquipment: (id: string, nombre: string, tipo: Equipment["tipo"], marca: string, modelo: string, placa: string, anio: number | null, fechaAdquisicion: string, estado: Equipment["estado"], notas: string) => Promise<void>
   deleteEquipment: (id: string) => Promise<void>
   // Equipment Documents
-  addEquipmentDocument: (equipmentId: string, nombre: string, numero: string, fechaEmision: string, fechaVencimiento: string, notas: string) => Promise<EquipmentDocument>
-  updateEquipmentDocument: (id: string, nombre: string, numero: string, fechaEmision: string, fechaVencimiento: string, notas: string) => Promise<void>
+  addEquipmentDocument: (equipmentId: string, nombre: string, numero: string, fechaEmision: string, fechaVencimiento: string, notas: string, fileUrl?: string) => Promise<EquipmentDocument>
+  updateEquipmentDocument: (id: string, nombre: string, numero: string, fechaEmision: string, fechaVencimiento: string, notas: string, fileUrl?: string) => Promise<void>
   deleteEquipmentDocument: (id: string) => Promise<void>
   // Maintenance Records
   addMaintenanceRecord: (equipmentId: string, fecha: string, tipo: MaintenanceRecord["tipo"], descripcion: string, piezasReemplazadas: string, proveedor: string, costo: number, proximoMantenimiento: string, notas: string) => Promise<MaintenanceRecord>
@@ -816,20 +817,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const addEquipmentDocument = useCallback(async (
     equipmentId: string, nombre: string, numero: string,
-    fechaEmision: string, fechaVencimiento: string, notas: string
+    fechaEmision: string, fechaVencimiento: string, notas: string, fileUrl = ""
   ): Promise<EquipmentDocument> => {
-    const doc: EquipmentDocument = { id: generateId(), equipmentId, nombre, numero, fechaEmision, fechaVencimiento, notas, createdAt: new Date().toISOString() }
+    const doc: EquipmentDocument = { id: generateId(), equipmentId, nombre, numero, fechaEmision, fechaVencimiento, notas, fileUrl, createdAt: new Date().toISOString() }
     setData((prev) => ({ ...prev, equipmentDocuments: [...prev.equipmentDocuments, doc] }))
-    await supabase.from("equipment_documents").insert({ id: doc.id, equipment_id: equipmentId, nombre, numero, fecha_emision: fechaEmision, fecha_vencimiento: fechaVencimiento || null, notas, created_at: doc.createdAt })
+    await supabase.from("equipment_documents").insert({ id: doc.id, equipment_id: equipmentId, nombre, numero, fecha_emision: fechaEmision, fecha_vencimiento: fechaVencimiento || null, notas, file_url: fileUrl, created_at: doc.createdAt })
     return doc
   }, [])
 
   const updateEquipmentDocument = useCallback(async (
     id: string, nombre: string, numero: string,
-    fechaEmision: string, fechaVencimiento: string, notas: string
+    fechaEmision: string, fechaVencimiento: string, notas: string, fileUrl?: string
   ) => {
-    setData((prev) => ({ ...prev, equipmentDocuments: prev.equipmentDocuments.map((d) => d.id === id ? { ...d, nombre, numero, fechaEmision, fechaVencimiento, notas } : d) }))
-    await supabase.from("equipment_documents").update({ nombre, numero, fecha_emision: fechaEmision, fecha_vencimiento: fechaVencimiento || null, notas }).eq("id", id)
+    setData((prev) => ({ ...prev, equipmentDocuments: prev.equipmentDocuments.map((d) => d.id === id ? { ...d, nombre, numero, fechaEmision, fechaVencimiento, notas, ...(fileUrl !== undefined ? { fileUrl } : {}) } : d) }))
+    const update: Record<string, unknown> = { nombre, numero, fecha_emision: fechaEmision, fecha_vencimiento: fechaVencimiento || null, notas }
+    if (fileUrl !== undefined) update.file_url = fileUrl
+    await supabase.from("equipment_documents").update(update).eq("id", id)
   }, [])
 
   const deleteEquipmentDocument = useCallback(async (id: string) => {

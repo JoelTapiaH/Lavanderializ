@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useRef } from "react"
 import { useStore } from "@/lib/store"
 import { useAuth, canEditModule } from "@/lib/auth"
+import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -20,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   Plus, Pencil, Trash2, ChevronLeft, AlertCircle,
   Truck, Car, WashingMachine, FileText, Wrench, AlertTriangle,
+  ExternalLink, Upload, X,
 } from "lucide-react"
 import { toast } from "sonner"
 import type { Equipment, EquipmentDocument, MaintenanceRecord } from "@/lib/types"
@@ -130,28 +132,45 @@ export default function EquiposPage() {
   // ── Document CRUD ──────────────────────────────────────────────────────────
   const [docOpen, setDocOpen] = useState(false)
   const [editDocId, setEditDocId] = useState<string | null>(null)
-  const [docForm, setDocForm] = useState({ ...emptyDocForm })
+  const [docForm, setDocForm] = useState({ ...emptyDocForm, fileUrl: "" })
   const [deleteDocId, setDeleteDocId] = useState<string | null>(null)
+  const [docFile, setDocFile] = useState<File | null>(null)
+  const [uploadingDoc, setUploadingDoc] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   function openNewDoc() {
     setEditDocId(null)
-    setDocForm({ ...emptyDocForm })
+    setDocForm({ ...emptyDocForm, fileUrl: "" })
+    setDocFile(null)
     setDocOpen(true)
   }
   function openEditDoc(doc: EquipmentDocument) {
     setEditDocId(doc.id)
-    setDocForm({ nombre: doc.nombre, numero: doc.numero, fechaEmision: doc.fechaEmision, fechaVencimiento: doc.fechaVencimiento, notas: doc.notas })
+    setDocForm({ nombre: doc.nombre, numero: doc.numero, fechaEmision: doc.fechaEmision, fechaVencimiento: doc.fechaVencimiento, notas: doc.notas, fileUrl: doc.fileUrl })
+    setDocFile(null)
     setDocOpen(true)
   }
   async function saveDoc() {
     if (!selectedEquipment || !docForm.nombre.trim()) { toast.error("Nombre requerido"); return }
+    setUploadingDoc(true)
+    let fileUrl = docForm.fileUrl
+    if (docFile) {
+      const ext = docFile.name.split(".").pop()
+      const path = `${selectedEquipment.id}/${editDocId ?? crypto.randomUUID()}.${ext}`
+      const { error } = await supabase.storage.from("equipment-docs").upload(path, docFile, { upsert: true })
+      if (error) { toast.error("Error subiendo archivo"); setUploadingDoc(false); return }
+      const { data: urlData } = supabase.storage.from("equipment-docs").getPublicUrl(path)
+      fileUrl = urlData.publicUrl
+    }
     if (editDocId) {
-      await updateEquipmentDocument(editDocId, docForm.nombre.trim(), docForm.numero, docForm.fechaEmision, docForm.fechaVencimiento, docForm.notas)
+      await updateEquipmentDocument(editDocId, docForm.nombre.trim(), docForm.numero, docForm.fechaEmision, docForm.fechaVencimiento, docForm.notas, fileUrl)
       toast.success("Documento actualizado")
     } else {
-      await addEquipmentDocument(selectedEquipment.id, docForm.nombre.trim(), docForm.numero, docForm.fechaEmision, docForm.fechaVencimiento, docForm.notas)
+      await addEquipmentDocument(selectedEquipment.id, docForm.nombre.trim(), docForm.numero, docForm.fechaEmision, docForm.fechaVencimiento, docForm.notas, fileUrl)
       toast.success("Documento agregado")
     }
+    setUploadingDoc(false)
+    setDocFile(null)
     setDocOpen(false)
   }
 
@@ -322,12 +341,21 @@ export default function EquiposPage() {
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">{doc.notas || "—"}</TableCell>
                           <TableCell className="text-right">
-                            {canEdit && (
-                              <div className="flex justify-end gap-1">
-                                <Button size="icon" variant="ghost" onClick={() => openEditDoc(doc)}><Pencil className="h-4 w-4" /></Button>
-                                <Button size="icon" variant="ghost" className="text-red-500" onClick={() => setDeleteDocId(doc.id)}><Trash2 className="h-4 w-4" /></Button>
-                              </div>
-                            )}
+                            <div className="flex justify-end gap-1">
+                              {doc.fileUrl && (
+                                <Button size="icon" variant="ghost" className="text-blue-600 hover:text-blue-700" title="Ver archivo" asChild>
+                                  <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="h-4 w-4" />
+                                  </a>
+                                </Button>
+                              )}
+                              {canEdit && (
+                                <>
+                                  <Button size="icon" variant="ghost" onClick={() => openEditDoc(doc)}><Pencil className="h-4 w-4" /></Button>
+                                  <Button size="icon" variant="ghost" className="text-red-500" onClick={() => setDeleteDocId(doc.id)}><Trash2 className="h-4 w-4" /></Button>
+                                </>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       )
@@ -421,7 +449,7 @@ export default function EquiposPage() {
         </Tabs>
 
         {/* Document Dialog */}
-        <Dialog open={docOpen} onOpenChange={setDocOpen}>
+        <Dialog open={docOpen} onOpenChange={(o) => { if (!o) { setDocFile(null) } setDocOpen(o) }}>
           <DialogContent>
             <DialogHeader><DialogTitle>{editDocId ? "Editar Documento" : "Agregar Documento"}</DialogTitle></DialogHeader>
             <div className="space-y-3">
@@ -447,11 +475,40 @@ export default function EquiposPage() {
                   <Label>Notas</Label>
                   <Input value={docForm.notas} onChange={(e) => setDocForm((f) => ({ ...f, notas: e.target.value }))} />
                 </div>
+                <div className="space-y-1 col-span-2">
+                  <Label>Archivo (PDF, imagen, etc.)</Label>
+                  <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" className="hidden" onChange={(e) => setDocFile(e.target.files?.[0] ?? null)} />
+                  {docFile ? (
+                    <div className="flex items-center gap-2 rounded-md border border-green-300 bg-green-50 px-3 py-2">
+                      <FileText className="h-4 w-4 text-green-600 shrink-0" />
+                      <span className="text-sm text-green-800 truncate flex-1">{docFile.name}</span>
+                      <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => { setDocFile(null); if (fileInputRef.current) fileInputRef.current.value = "" }}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : docForm.fileUrl ? (
+                    <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+                      <FileText className="h-4 w-4 text-blue-500 shrink-0" />
+                      <span className="text-sm text-muted-foreground truncate flex-1">Archivo guardado</span>
+                      <a href={docForm.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs shrink-0">Ver</a>
+                      <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => fileInputRef.current?.click()}>
+                        <Upload className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button type="button" variant="outline" size="sm" className="w-full gap-2" onClick={() => fileInputRef.current?.click()}>
+                      <Upload className="h-4 w-4" />
+                      Subir archivo
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDocOpen(false)}>Cancelar</Button>
-              <Button onClick={saveDoc}>Guardar</Button>
+              <Button onClick={saveDoc} disabled={uploadingDoc}>
+                {uploadingDoc ? "Subiendo..." : "Guardar"}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
