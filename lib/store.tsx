@@ -337,10 +337,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchAllData().then((d) => {
-      setData(d)
+    const timeout = setTimeout(() => {
+      console.warn("Store timeout — usando datos vacíos")
+      setData(emptyData)
       setLoading(false)
-    })
+    }, 8000)
+
+    fetchAllData()
+      .then((d) => {
+        clearTimeout(timeout)
+        setData(d)
+        setLoading(false)
+      })
+      .catch((err) => {
+        clearTimeout(timeout)
+        console.error("fetchAllData error:", err)
+        setData(emptyData)
+        setLoading(false)
+      })
   }, [])
 
   // ── Groups ──────────────────────────────────────────────────────────────────
@@ -1012,10 +1026,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     setData(emptyData)
   }, [])
-
-  if (loading) {
-    return null
-  }
 
   return (
     <StoreContext.Provider
