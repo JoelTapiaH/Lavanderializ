@@ -66,18 +66,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .eq("id", supabaseUser.id)
       .maybeSingle()
 
+    console.log("[auth] fetchOrCreateProfile → data:", data, "error:", error)
+
     if (data) {
+      console.log("[auth] profile loaded, role:", data.role)
       setProfile({ id: data.id, email: data.email, nombre: data.nombre ?? "", role: data.role as UserRole })
       return
     }
 
     if (error) {
-      // RLS or network error — don't overwrite profile with "operador"
-      console.error("fetchOrCreateProfile error:", error.message)
+      console.error("[auth] RLS/network error fetching profile:", error.message, error.code)
       return
     }
 
     // data === null AND no error → first login, create profile
+    console.log("[auth] no profile found, creating with operador role")
     const newProfile = {
       id: supabaseUser.id,
       email: supabaseUser.email ?? "",
