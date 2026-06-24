@@ -60,30 +60,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   async function fetchOrCreateProfile(supabaseUser: User) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("user_profiles")
       .select("*")
       .eq("id", supabaseUser.id)
-      .single()
+      .maybeSingle()
 
     if (data) {
       setProfile({ id: data.id, email: data.email, nombre: data.nombre ?? "", role: data.role as UserRole })
-    } else {
-      // Auto-create profile on first login with default role 'operador'
-      const newProfile = {
-        id: supabaseUser.id,
-        email: supabaseUser.email ?? "",
-        nombre: supabaseUser.email?.split("@")[0] ?? "",
-        role: "operador" as UserRole,
-      }
-      await supabase.from("user_profiles").insert({
-        id: newProfile.id,
-        email: newProfile.email,
-        nombre: newProfile.nombre,
-        role: newProfile.role,
-      })
-      setProfile(newProfile)
+      return
     }
+
+    if (error) {
+      // RLS or network error — don't overwrite profile with "operador"
+      console.error("fetchOrCreateProfile error:", error.message)
+      return
+    }
+
+    // data === null AND no error → first login, create profile
+    const newProfile = {
+      id: supabaseUser.id,
+      email: supabaseUser.email ?? "",
+      nombre: supabaseUser.email?.split("@")[0] ?? "",
+      role: "operador" as UserRole,
+    }
+    await supabase.from("user_profiles").insert({
+      id: newProfile.id,
+      email: newProfile.email,
+      nombre: newProfile.nombre,
+      role: newProfile.role,
+    })
+    setProfile(newProfile)
   }
 
   useEffect(() => {
