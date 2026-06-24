@@ -291,33 +291,35 @@ export function EppTab() {
                   Nuevo Periodo
                 </Button>
                 {selectedPeriodo && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setEditingGarmentsPeriodoId(selectedPeriodoId)
-                      setEditingGarments(selectedPeriodo?.garmentTypeIds ?? [])
-                      setGarmentsDialogOpen(true)
-                    }}
-                  >
-                    <Settings2 className="mr-1 h-3.5 w-3.5" />
-                    Prendas
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-destructive hover:text-destructive"
-                    onClick={async () => {
-                      await deleteEppPeriodo(selectedPeriodoId)
-                      setSelectedPeriodoId(
-                        data.eppPeriodos.find((p) => p.id !== selectedPeriodoId)?.id ?? ""
-                      )
-                      toast.success("Periodo eliminado")
-                    }}
-                  >
-                    <Trash2 className="mr-1 h-3.5 w-3.5" />
-                    Eliminar
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingGarmentsPeriodoId(selectedPeriodoId)
+                        setEditingGarments(selectedPeriodo?.garmentTypeIds ?? [])
+                        setGarmentsDialogOpen(true)
+                      }}
+                    >
+                      <Settings2 className="mr-1 h-3.5 w-3.5" />
+                      Prendas
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive hover:text-destructive"
+                      onClick={async () => {
+                        await deleteEppPeriodo(selectedPeriodoId)
+                        setSelectedPeriodoId(
+                          data.eppPeriodos.find((p) => p.id !== selectedPeriodoId)?.id ?? ""
+                        )
+                        toast.success("Periodo eliminado")
+                      }}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                      Eliminar
+                    </Button>
+                  </>
                 )}
               </>
             )}
