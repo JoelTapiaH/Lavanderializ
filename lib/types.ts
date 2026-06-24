@@ -200,6 +200,37 @@ export interface MaintenanceRecord {
   createdAt: string
 }
 
+export interface Subcontrata {
+  id: string
+  nombre: string
+  createdAt: string
+}
+
+export interface SubcontrataWorker {
+  id: string
+  subcontrataId: string
+  nombre: string
+  createdAt: string
+}
+
+export interface EppPeriodo {
+  id: string
+  projectId: string | null
+  nombre: string
+  fecha: string
+  createdAt: string
+}
+
+export interface EppRegistroItem {
+  id: string
+  periodoId: string
+  subcontrataId: string
+  workerId: string
+  garmentTypeId: string
+  cantidad: number
+  createdAt: string
+}
+
 export interface StoreData {
   groups: Group[]
   workers: Worker[]
@@ -216,6 +247,10 @@ export interface StoreData {
   equipment: Equipment[]
   equipmentDocuments: EquipmentDocument[]
   maintenanceRecords: MaintenanceRecord[]
+  subcontratas: Subcontrata[]
+  subcontrataWorkers: SubcontrataWorker[]
+  eppPeriodos: EppPeriodo[]
+  eppRegistroItems: EppRegistroItem[]
 }
 
 // kept for backwards compat — not used after inventory redesign

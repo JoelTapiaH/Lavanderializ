@@ -153,4 +153,8 @@ export const seedData: StoreData = {
   equipment: [],
   equipmentDocuments: [],
   maintenanceRecords: [],
+  subcontratas: [],
+  subcontrataWorkers: [],
+  eppPeriodos: [],
+  eppRegistroItems: [],
 }

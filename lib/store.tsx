@@ -1,7 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react"
-import type { StoreData, Group, Worker, GarmentType, Order, OrderItem, OrderStatus, ValorizacionPeriod, Acta, Guia, ValorizacionItem, InventoryItem, InventoryMovement, Project, ProjectGarmentPrice, Employee, AttendanceRecord, PayrollPeriod, PayrollRecord, Equipment, EquipmentDocument, MaintenanceRecord } from "./types"
+import type { StoreData, Group, Worker, GarmentType, Order, OrderItem, OrderStatus, ValorizacionPeriod, Acta, Guia, ValorizacionItem, InventoryItem, InventoryMovement, Project, ProjectGarmentPrice, Employee, AttendanceRecord, PayrollPeriod, PayrollRecord, Equipment, EquipmentDocument, MaintenanceRecord, Subcontrata, SubcontrataWorker, EppPeriodo, EppRegistroItem } from "./types"
 import { supabase } from "./supabase"
 
 function generateId(): string {
@@ -32,6 +32,10 @@ const emptyData: StoreData = {
   equipment: [],
   equipmentDocuments: [],
   maintenanceRecords: [],
+  subcontratas: [],
+  subcontrataWorkers: [],
+  eppPeriodos: [],
+  eppRegistroItems: [],
 }
 
 async function fetchAllData(): Promise<StoreData> {
@@ -57,6 +61,10 @@ async function fetchAllData(): Promise<StoreData> {
     { data: equipmentRaw },
     { data: equipmentDocumentsRaw },
     { data: maintenanceRecordsRaw },
+    { data: subcontratosRaw },
+    { data: subcontrataWorkersRaw },
+    { data: eppPeriodosRaw },
+    { data: eppRegistroItemsRaw },
   ] = await Promise.all([
     supabase.from("groups").select("*").order("created_at"),
     supabase.from("workers").select("*").order("created_at"),
@@ -79,6 +87,10 @@ async function fetchAllData(): Promise<StoreData> {
     supabase.from("equipment").select("*").order("created_at"),
     supabase.from("equipment_documents").select("*").order("created_at"),
     supabase.from("maintenance_records").select("*").order("fecha", { ascending: false }),
+    supabase.from("subcontratas").select("*").order("created_at"),
+    supabase.from("subcontrata_workers").select("*").order("created_at"),
+    supabase.from("epp_periodos").select("*").order("created_at", { ascending: false }),
+    supabase.from("epp_registro_items").select("*"),
   ])
 
   const mappedOrders: Order[] = (orders ?? []).map((o) => ({
@@ -204,6 +216,21 @@ async function fetchAllData(): Promise<StoreData> {
       costo: m.costo ?? 0, proximoMantenimiento: m.proximo_mantenimiento ?? "",
       notas: m.notas ?? "", createdAt: m.created_at,
     })),
+    subcontratas: (subcontratosRaw ?? []).map((s) => ({
+      id: s.id, nombre: s.nombre, createdAt: s.created_at,
+    })),
+    subcontrataWorkers: (subcontrataWorkersRaw ?? []).map((w) => ({
+      id: w.id, subcontrataId: w.subcontrata_id, nombre: w.nombre, createdAt: w.created_at,
+    })),
+    eppPeriodos: (eppPeriodosRaw ?? []).map((p) => ({
+      id: p.id, projectId: p.project_id ?? null, nombre: p.nombre,
+      fecha: p.fecha, createdAt: p.created_at,
+    })),
+    eppRegistroItems: (eppRegistroItemsRaw ?? []).map((i) => ({
+      id: i.id, periodoId: i.periodo_id, subcontrataId: i.subcontrata_id,
+      workerId: i.worker_id, garmentTypeId: i.garment_type_id,
+      cantidad: i.cantidad, createdAt: i.created_at,
+    })),
   }
 }
 
@@ -286,6 +313,19 @@ interface StoreContextType {
   addMaintenanceRecord: (equipmentId: string, fecha: string, tipo: MaintenanceRecord["tipo"], descripcion: string, piezasReemplazadas: string, proveedor: string, costo: number, proximoMantenimiento: string, notas: string) => Promise<MaintenanceRecord>
   updateMaintenanceRecord: (id: string, fecha: string, tipo: MaintenanceRecord["tipo"], descripcion: string, piezasReemplazadas: string, proveedor: string, costo: number, proximoMantenimiento: string, notas: string) => Promise<void>
   deleteMaintenanceRecord: (id: string) => Promise<void>
+  // Subcontratas
+  addSubcontrata: (nombre: string) => Promise<Subcontrata>
+  updateSubcontrata: (id: string, nombre: string) => Promise<void>
+  deleteSubcontrata: (id: string) => Promise<void>
+  // SubcontrataWorkers
+  addSubcontrataWorker: (subcontrataId: string, nombre: string) => Promise<SubcontrataWorker>
+  updateSubcontrataWorker: (id: string, nombre: string) => Promise<void>
+  deleteSubcontrataWorker: (id: string) => Promise<void>
+  // EPP Periodos
+  addEppPeriodo: (nombre: string, fecha: string, projectId: string | null) => Promise<EppPeriodo>
+  deleteEppPeriodo: (id: string) => Promise<void>
+  // EPP Registro Items
+  upsertEppRegistroItem: (periodoId: string, subcontrataId: string, workerId: string, garmentTypeId: string, cantidad: number) => Promise<void>
   // Reset
   resetData: () => Promise<void>
 }
@@ -867,6 +907,102 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     await supabase.from("maintenance_records").delete().eq("id", id)
   }, [])
 
+  // ── Subcontratas ──────────────────────────────────────────────────────────────
+
+  const addSubcontrata = useCallback(async (nombre: string): Promise<Subcontrata> => {
+    const s: Subcontrata = { id: generateId(), nombre, createdAt: new Date().toISOString() }
+    setData((prev) => ({ ...prev, subcontratas: [...prev.subcontratas, s] }))
+    await supabase.from("subcontratas").insert({ id: s.id, nombre, created_at: s.createdAt })
+    return s
+  }, [])
+
+  const updateSubcontrata = useCallback(async (id: string, nombre: string) => {
+    setData((prev) => ({ ...prev, subcontratas: prev.subcontratas.map((s) => s.id === id ? { ...s, nombre } : s) }))
+    await supabase.from("subcontratas").update({ nombre }).eq("id", id)
+  }, [])
+
+  const deleteSubcontrata = useCallback(async (id: string) => {
+    setData((prev) => ({
+      ...prev,
+      subcontratas: prev.subcontratas.filter((s) => s.id !== id),
+      subcontrataWorkers: prev.subcontrataWorkers.filter((w) => w.subcontrataId !== id),
+      eppRegistroItems: prev.eppRegistroItems.filter((i) => i.subcontrataId !== id),
+    }))
+    await supabase.from("subcontratas").delete().eq("id", id)
+  }, [])
+
+  // ── SubcontrataWorkers ────────────────────────────────────────────────────────
+
+  const addSubcontrataWorker = useCallback(async (subcontrataId: string, nombre: string): Promise<SubcontrataWorker> => {
+    const w: SubcontrataWorker = { id: generateId(), subcontrataId, nombre, createdAt: new Date().toISOString() }
+    setData((prev) => ({ ...prev, subcontrataWorkers: [...prev.subcontrataWorkers, w] }))
+    await supabase.from("subcontrata_workers").insert({ id: w.id, subcontrata_id: subcontrataId, nombre, created_at: w.createdAt })
+    return w
+  }, [])
+
+  const updateSubcontrataWorker = useCallback(async (id: string, nombre: string) => {
+    setData((prev) => ({ ...prev, subcontrataWorkers: prev.subcontrataWorkers.map((w) => w.id === id ? { ...w, nombre } : w) }))
+    await supabase.from("subcontrata_workers").update({ nombre }).eq("id", id)
+  }, [])
+
+  const deleteSubcontrataWorker = useCallback(async (id: string) => {
+    setData((prev) => ({
+      ...prev,
+      subcontrataWorkers: prev.subcontrataWorkers.filter((w) => w.id !== id),
+      eppRegistroItems: prev.eppRegistroItems.filter((i) => i.workerId !== id),
+    }))
+    await supabase.from("subcontrata_workers").delete().eq("id", id)
+  }, [])
+
+  // ── EPP Periodos ──────────────────────────────────────────────────────────────
+
+  const addEppPeriodo = useCallback(async (nombre: string, fecha: string, projectId: string | null): Promise<EppPeriodo> => {
+    const p: EppPeriodo = { id: generateId(), projectId, nombre, fecha, createdAt: new Date().toISOString() }
+    setData((prev) => ({ ...prev, eppPeriodos: [p, ...prev.eppPeriodos] }))
+    await supabase.from("epp_periodos").insert({ id: p.id, project_id: projectId, nombre, fecha, created_at: p.createdAt })
+    return p
+  }, [])
+
+  const deleteEppPeriodo = useCallback(async (id: string) => {
+    setData((prev) => ({
+      ...prev,
+      eppPeriodos: prev.eppPeriodos.filter((p) => p.id !== id),
+      eppRegistroItems: prev.eppRegistroItems.filter((i) => i.periodoId !== id),
+    }))
+    await supabase.from("epp_periodos").delete().eq("id", id)
+  }, [])
+
+  // ── EPP Registro Items ────────────────────────────────────────────────────────
+
+  const upsertEppRegistroItem = useCallback(async (
+    periodoId: string, subcontrataId: string, workerId: string, garmentTypeId: string, cantidad: number
+  ) => {
+    const existing = data.eppRegistroItems.find(
+      (i) => i.periodoId === periodoId && i.subcontrataId === subcontrataId && i.workerId === workerId && i.garmentTypeId === garmentTypeId
+    )
+    if (cantidad === 0) {
+      if (existing) {
+        setData((prev) => ({ ...prev, eppRegistroItems: prev.eppRegistroItems.filter((i) => i.id !== existing.id) }))
+        await supabase.from("epp_registro_items").delete().eq("id", existing.id)
+      }
+      return
+    }
+    if (existing) {
+      setData((prev) => ({
+        ...prev,
+        eppRegistroItems: prev.eppRegistroItems.map((i) => i.id === existing.id ? { ...i, cantidad } : i),
+      }))
+      await supabase.from("epp_registro_items").update({ cantidad }).eq("id", existing.id)
+    } else {
+      const newItem: EppRegistroItem = { id: generateId(), periodoId, subcontrataId, workerId, garmentTypeId, cantidad, createdAt: new Date().toISOString() }
+      setData((prev) => ({ ...prev, eppRegistroItems: [...prev.eppRegistroItems, newItem] }))
+      await supabase.from("epp_registro_items").insert({
+        id: newItem.id, periodo_id: periodoId, subcontrata_id: subcontrataId,
+        worker_id: workerId, garment_type_id: garmentTypeId, cantidad, created_at: newItem.createdAt,
+      })
+    }
+  }, [data.eppRegistroItems])
+
   // ── Reset ────────────────────────────────────────────────────────────────────
 
   const resetData = useCallback(async () => {
@@ -902,6 +1038,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         addEquipment, updateEquipment, deleteEquipment,
         addEquipmentDocument, updateEquipmentDocument, deleteEquipmentDocument,
         addMaintenanceRecord, updateMaintenanceRecord, deleteMaintenanceRecord,
+        addSubcontrata, updateSubcontrata, deleteSubcontrata,
+        addSubcontrataWorker, updateSubcontrataWorker, deleteSubcontrataWorker,
+        addEppPeriodo, deleteEppPeriodo,
+        upsertEppRegistroItem,
         resetData,
       }}
     >

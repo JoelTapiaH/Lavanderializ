@@ -20,6 +20,8 @@ import { ValorizacionTable } from "@/components/valorizacion-table"
 import { ValorizacionPeriodDialog } from "@/components/valorizacion-period-dialog"
 import { generateValorizacionPdf } from "@/lib/generate-pdf"
 import { generateValorizacionExcel } from "@/lib/generate-excel"
+import { EppTab } from "@/components/epp-tab"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export default function ValorizacionPage() {
   const { profile } = useAuth()
@@ -157,20 +159,33 @@ export default function ValorizacionPage() {
     <>
       <PageHeader
         title="Valorizacion del Servicio"
-        description="Registro de prendas enviadas y recibidas por periodo. Haz clic en cualquier celda para editar."
-        actions={canEdit ? (
-          <Button
-            onClick={() => {
-              setEditPeriodId(null)
-              setPeriodDialogOpen(true)
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Nuevo Periodo
-          </Button>
-        ) : undefined}
+        description="Registro de prendas enviadas y recibidas por periodo."
       />
       <main className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
+      <Tabs defaultValue="valorizacion">
+        <TabsList>
+          <TabsTrigger value="valorizacion">Valorización</TabsTrigger>
+          <TabsTrigger value="epp">EPP</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="epp" className="mt-4">
+          <EppTab />
+        </TabsContent>
+
+        <TabsContent value="valorizacion" className="mt-4">
+        {canEdit && (
+          <div className="flex justify-end">
+            <Button
+              onClick={() => {
+                setEditPeriodId(null)
+                setPeriodDialogOpen(true)
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo Periodo
+            </Button>
+          </div>
+        )}
         {/* Project + Period selector */}
         <Card>
           <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -470,6 +485,8 @@ export default function ValorizacionPage() {
             })()}
           </>
         )}
+        </TabsContent>
+      </Tabs>
       </main>
 
       {/* Period dialog */}
