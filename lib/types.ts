@@ -218,6 +218,7 @@ export interface EppPeriodo {
   projectId: string | null
   nombre: string
   fecha: string
+  garmentTypeIds: string[]
   createdAt: string
 }
 

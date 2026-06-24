@@ -224,7 +224,9 @@ async function fetchAllData(): Promise<StoreData> {
     })),
     eppPeriodos: (eppPeriodosRaw ?? []).map((p) => ({
       id: p.id, projectId: p.project_id ?? null, nombre: p.nombre,
-      fecha: p.fecha, createdAt: p.created_at,
+      fecha: p.fecha,
+      garmentTypeIds: (() => { try { return JSON.parse(p.garment_type_ids ?? "[]") } catch { return [] } })(),
+      createdAt: p.created_at,
     })),
     eppRegistroItems: (eppRegistroItemsRaw ?? []).map((i) => ({
       id: i.id, periodoId: i.periodo_id, subcontrataId: i.subcontrata_id,
@@ -322,7 +324,8 @@ interface StoreContextType {
   updateSubcontrataWorker: (id: string, nombre: string) => Promise<void>
   deleteSubcontrataWorker: (id: string) => Promise<void>
   // EPP Periodos
-  addEppPeriodo: (nombre: string, fecha: string, projectId: string | null) => Promise<EppPeriodo>
+  addEppPeriodo: (nombre: string, fecha: string, projectId: string | null, garmentTypeIds: string[]) => Promise<EppPeriodo>
+  updateEppPeriodoGarments: (id: string, garmentTypeIds: string[]) => Promise<void>
   deleteEppPeriodo: (id: string) => Promise<void>
   // EPP Registro Items
   upsertEppRegistroItem: (periodoId: string, subcontrataId: string, workerId: string, garmentTypeId: string, cantidad: number) => Promise<void>
@@ -970,11 +973,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // ── EPP Periodos ──────────────────────────────────────────────────────────────
 
-  const addEppPeriodo = useCallback(async (nombre: string, fecha: string, projectId: string | null): Promise<EppPeriodo> => {
-    const p: EppPeriodo = { id: generateId(), projectId, nombre, fecha, createdAt: new Date().toISOString() }
+  const addEppPeriodo = useCallback(async (nombre: string, fecha: string, projectId: string | null, garmentTypeIds: string[]): Promise<EppPeriodo> => {
+    const p: EppPeriodo = { id: generateId(), projectId, nombre, fecha, garmentTypeIds, createdAt: new Date().toISOString() }
     setData((prev) => ({ ...prev, eppPeriodos: [p, ...prev.eppPeriodos] }))
-    await supabase.from("epp_periodos").insert({ id: p.id, project_id: projectId, nombre, fecha, created_at: p.createdAt })
+    await supabase.from("epp_periodos").insert({ id: p.id, project_id: projectId, nombre, fecha, garment_type_ids: JSON.stringify(garmentTypeIds), created_at: p.createdAt })
     return p
+  }, [])
+
+  const updateEppPeriodoGarments = useCallback(async (id: string, garmentTypeIds: string[]) => {
+    setData((prev) => ({
+      ...prev,
+      eppPeriodos: prev.eppPeriodos.map((p) => p.id === id ? { ...p, garmentTypeIds } : p),
+    }))
+    await supabase.from("epp_periodos").update({ garment_type_ids: JSON.stringify(garmentTypeIds) }).eq("id", id)
   }, [])
 
   const deleteEppPeriodo = useCallback(async (id: string) => {
@@ -1050,7 +1061,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         addMaintenanceRecord, updateMaintenanceRecord, deleteMaintenanceRecord,
         addSubcontrata, updateSubcontrata, deleteSubcontrata,
         addSubcontrataWorker, updateSubcontrataWorker, deleteSubcontrataWorker,
-        addEppPeriodo, deleteEppPeriodo,
+        addEppPeriodo, updateEppPeriodoGarments, deleteEppPeriodo,
         upsertEppRegistroItem,
         resetData,
       }}

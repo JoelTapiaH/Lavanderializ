@@ -21,7 +21,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Plus, Trash2, Pencil, Users, Building2, ChevronRight } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Plus, Trash2, Pencil, Users, Building2, ChevronRight, Settings2 } from "lucide-react"
 import { toast } from "sonner"
 
 export function EppTab() {
@@ -31,11 +32,11 @@ export function EppTab() {
     data,
     addSubcontrata, updateSubcontrata, deleteSubcontrata,
     addSubcontrataWorker, updateSubcontrataWorker, deleteSubcontrataWorker,
-    addEppPeriodo, deleteEppPeriodo,
+    addEppPeriodo, updateEppPeriodoGarments, deleteEppPeriodo,
     upsertEppRegistroItem,
   } = useStore()
 
-  const activeGarmentTypes = useMemo(
+  const allActiveGarmentTypes = useMemo(
     () => data.garmentTypes.filter((gt) => gt.active),
     [data.garmentTypes]
   )
@@ -45,6 +46,10 @@ export function EppTab() {
   const [selectedPeriodoId, setSelectedPeriodoId] = useState<string>(data.eppPeriodos[0]?.id ?? "")
   const [periodDialogOpen, setPeriodDialogOpen] = useState(false)
   const [periodoForm, setPeriodoForm] = useState({ nombre: "", fecha: "" })
+  const [periodoGarments, setPeriodoGarments] = useState<string[]>([])
+  const [garmentsDialogOpen, setGarmentsDialogOpen] = useState(false)
+  const [editingGarmentsPeriodoId, setEditingGarmentsPeriodoId] = useState<string | null>(null)
+  const [editingGarments, setEditingGarments] = useState<string[]>([])
 
   // ── View state ────────────────────────────────────────────────────────────────
   const [view, setView] = useState<"summary" | "detail">("summary")
@@ -76,6 +81,12 @@ export function EppTab() {
   )
 
   const selectedPeriodo = data.eppPeriodos.find((p) => p.id === selectedPeriodoId)
+
+  const activeGarmentTypes = useMemo(() => {
+    if (!selectedPeriodo || selectedPeriodo.garmentTypeIds.length === 0)
+      return allActiveGarmentTypes
+    return allActiveGarmentTypes.filter((gt) => selectedPeriodo.garmentTypeIds.includes(gt.id))
+  }, [selectedPeriodo, allActiveGarmentTypes])
 
   const periodItems = useMemo(
     () => data.eppRegistroItems.filter((i) => i.periodoId === selectedPeriodoId),
@@ -146,12 +157,25 @@ export function EppTab() {
     const p = await addEppPeriodo(
       periodoForm.nombre.trim(),
       periodoForm.fecha,
-      selectedProjectId || null
+      selectedProjectId || null,
+      periodoGarments
     )
     setSelectedPeriodoId(p.id)
     setPeriodoForm({ nombre: "", fecha: "" })
+    setPeriodoGarments([])
     setPeriodDialogOpen(false)
     toast.success("Periodo EPP creado")
+  }
+
+  async function handleSaveGarments() {
+    if (!editingGarmentsPeriodoId) return
+    await updateEppPeriodoGarments(editingGarmentsPeriodoId, editingGarments)
+    setGarmentsDialogOpen(false)
+    toast.success("Prendas actualizadas")
+  }
+
+  function toggleGarment(id: string, list: string[], setList: (v: string[]) => void) {
+    setList(list.includes(id) ? list.filter((g) => g !== id) : [...list, id])
   }
 
   // ── Subcontrata handlers ──────────────────────────────────────────────────
@@ -267,6 +291,18 @@ export function EppTab() {
                   Nuevo Periodo
                 </Button>
                 {selectedPeriodo && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setEditingGarmentsPeriodoId(selectedPeriodoId)
+                      setEditingGarments(selectedPeriodo?.garmentTypeIds ?? [])
+                      setGarmentsDialogOpen(true)
+                    }}
+                  >
+                    <Settings2 className="mr-1 h-3.5 w-3.5" />
+                    Prendas
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
@@ -626,7 +662,7 @@ export function EppTab() {
 
       {/* ── Nuevo Periodo Dialog ─────────────────────────────────────────────── */}
       <Dialog open={periodDialogOpen} onOpenChange={setPeriodDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Nuevo Periodo EPP</DialogTitle>
           </DialogHeader>
@@ -637,7 +673,6 @@ export function EppTab() {
                 placeholder="Ej: 16-06-26"
                 value={periodoForm.nombre}
                 onChange={(e) => setPeriodoForm((f) => ({ ...f, nombre: e.target.value }))}
-                onKeyDown={(e) => e.key === "Enter" && handleCreatePeriodo()}
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -648,12 +683,69 @@ export function EppTab() {
                 onChange={(e) => setPeriodoForm((f) => ({ ...f, fecha: e.target.value }))}
               />
             </div>
+            <div className="flex flex-col gap-2">
+              <Label>Prendas a mostrar (opcional — si no seleccionas, se muestran todas)</Label>
+              <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto rounded-md border p-3">
+                {allActiveGarmentTypes.map((gt) => (
+                  <div key={gt.id} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`new-gt-${gt.id}`}
+                      checked={periodoGarments.includes(gt.id)}
+                      onCheckedChange={() => toggleGarment(gt.id, periodoGarments, setPeriodoGarments)}
+                    />
+                    <label htmlFor={`new-gt-${gt.id}`} className="text-sm cursor-pointer">
+                      {gt.name}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPeriodDialogOpen(false)}>
               Cancelar
             </Button>
             <Button onClick={handleCreatePeriodo}>Crear</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Editar Prendas Dialog ────────────────────────────────────────────── */}
+      <Dialog open={garmentsDialogOpen} onOpenChange={setGarmentsDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Prendas del Periodo</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-muted-foreground">
+              Selecciona las prendas que aparecen como columnas en este periodo.
+              Si no seleccionas ninguna, se muestran todas.
+            </p>
+            <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto rounded-md border p-3">
+              {allActiveGarmentTypes.map((gt) => (
+                <div key={gt.id} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`edit-gt-${gt.id}`}
+                    checked={editingGarments.includes(gt.id)}
+                    onCheckedChange={() => toggleGarment(gt.id, editingGarments, setEditingGarments)}
+                  />
+                  <label htmlFor={`edit-gt-${gt.id}`} className="text-sm cursor-pointer">
+                    {gt.name}
+                  </label>
+                </div>
+              ))}
+            </div>
+            {editingGarments.length === 0 && (
+              <p className="text-xs text-muted-foreground italic">
+                Sin selección = se muestran todas las prendas activas.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGarmentsDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveGarments}>Guardar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
